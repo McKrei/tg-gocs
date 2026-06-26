@@ -65,6 +65,8 @@ async def test_handle_photo() -> None:
     message = AsyncMock()
     bot = AsyncMock()
     state = AsyncMock()
+    state.get_data = AsyncMock(return_value={})
+    state.update_data = AsyncMock(return_value={})
 
     photo = MagicMock(file_id="photo123", file_size=500)
     message.photo = [photo]
@@ -88,6 +90,8 @@ async def test_handle_document() -> None:
     message = AsyncMock()
     bot = AsyncMock()
     state = AsyncMock()
+    state.get_data = AsyncMock(return_value={})
+    state.update_data = AsyncMock(return_value={})
 
     doc = MagicMock(file_id="doc123", file_name="doc.pdf", mime_type="application/pdf", file_size=1000)
     message.document = doc

@@ -3,7 +3,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from src.bot.handlers import commands, files
+from src.bot.handlers import callbacks, commands, files, text
 from src.bot.middleware.auth import AuthMiddleware
 from src.config import settings
 from src.utils.logger import get_logger
@@ -20,7 +20,10 @@ async def main() -> None:
     dp.callback_query.outer_middleware(AuthMiddleware())
 
     dp.include_router(commands.router)
+    dp.include_router(callbacks.router)
+    dp.include_router(text.router)
     dp.include_router(files.router)
+
 
     logger.info("Запуск Telegram-бота...")
     await dp.start_polling(bot)
