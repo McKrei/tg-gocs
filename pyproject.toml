@@ -1,0 +1,46 @@
+[project]
+name = "tg-gocs"
+version = "0.1.0"
+description = "Telegram-бот для классификации, переименования, сохранения и поиска семейных документов"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiogram",
+    "pydantic-settings",
+    "sqlalchemy",
+    "aiosqlite",
+    "google-api-python-client",
+    "google-auth-httplib2",
+    "google-auth-oauthlib",
+    "pillow",
+    "sqlite-vec",
+    "openai",
+    "httpx",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "mypy",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "RET", "SIM", "ARG", "PTH", "RUF"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+ignore_missing_imports = true
+exclude = ["venv", ".venv", "tests"]
+
