@@ -11,7 +11,7 @@ Telegram-бот (интеллектуальный агент) для семей�
 
 ## 🛠️ Стек технологий
 
-- **Python:** 3.12+
+- **Python:** 3.13+
 - **Менеджер пакетов:** [uv](https://github.com/astral-sh/uv)
 - **Telegram фреймворк:** [aiogram 3.x](https://github.com/aiogram/aiogram) (асинхронный, FSM)
 - **Конфигурация:** [pydantic-settings](https://github.com/pydantic/pydantic-settings)
@@ -61,3 +61,21 @@ cp .env.example .env
   ```bash
   make down
   ```
+
+## 🐳 Деплой через Docker
+
+Бот полностью подготовлен к развертыванию в Docker-контейнере. Для запуска выполните:
+
+1. Убедитесь, что файл `.env` заполнен, а файл `data/credentials.json` (Service Account для Google Drive) находится на своем месте.
+2. Запустите контейнер в фоновом режиме:
+   ```bash
+   make up
+   ```
+3. Логи контейнера можно посмотреть с помощью:
+   ```bash
+   docker logs -f tg-gocs-bot
+   ```
+4. Остановить бота:
+   ```bash
+   make down
+   ```
