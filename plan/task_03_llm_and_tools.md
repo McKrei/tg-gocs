@@ -1,6 +1,6 @@
 # Задача 3 — LLM клиент и инструменты агента
 
-## Статус: ⬜ Не начата
+## Статус: ✅ Выполнена
 
 ## Предзависимость
 ✅ Задача 2 выполнена
@@ -10,16 +10,17 @@
 
 ## Что делаем
 
-- [ ] `src/llm/client.py` — async клиент OpenRouter для Gemini Flash (vision + chat + tools)
-- [ ] `src/llm/embeddings.py` — генерация эмбеддингов через gemini-embedding-2
-- [ ] `src/agent/tools.py` — 5 инструментов агента:
+- [x] `src/llm/client.py` — async клиент OpenRouter для Gemini Flash (vision + chat + tools)
+- [x] `src/llm/embeddings.py` — генерация эмбеддингов через gemini-embedding-2
+- [x] `src/agent/tools.py` — 5 инструментов агента:
   - `get_directory_tree(path_prefix)` — структура папок
   - `create_directory(path)` — создать папку
   - `convert_to_pdf(temp_file_ids, output_filename)` — склеить фото/файлы в PDF
   - `save_to_local_and_drive(temp_filepath, target_path)` — сохранить (Drive = заглушка)
   - `vector_search(query, limit)` — поиск по SQLite
-- [ ] `src/agent/agent.py` — оркестрация: принять файл → вызвать модель → вернуть JSON с метаданными
-- [ ] `tests/test_agent.py` — моки LLM, проверка вызовов инструментов
+- [x] `src/agent/agent.py` — оркестрация: принять файл → вызвать модель → вернуть JSON с метаданными
+- [x] `tests/test_agent.py` — моки LLM, проверка вызовов инструментов
+
 
 ## Критерий готовности
 
