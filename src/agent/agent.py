@@ -93,9 +93,34 @@ def _extract_document_date(text: str) -> str | None:
     return None
 
 
-def normalize_draft_metadata(draft: dict[str, Any], file_ext: str, today: str | None = None) -> dict[str, Any]:
-    """Нормализует имя файла черновика по правилам проекта."""
+def normalize_draft_metadata(
+    draft: dict[str, Any],
+    file_ext: str,
+    today: str | None = None,
+    existing_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    """Нормализует имя файла черновика и категорию по правилам проекта."""
     normalized = dict(draft)
+
+    category = str(normalized.get("category", "")).strip().replace("\\", "/").strip("/")
+    if category and existing_paths:
+        found = False
+        category_lower = category.lower()
+        for p in existing_paths:
+            if p.lower() == category_lower:
+                normalized["category"] = p
+                found = True
+                break
+
+        if not found:
+            category_parts = {part.strip().lower() for part in category.split("/") if part.strip()}
+            for p in existing_paths:
+                p_parts = {part.strip().lower() for part in p.split("/") if part.strip()}
+                if category_parts == p_parts:
+                    normalized["category"] = p
+                    found = True
+                    break
+
     fallback_date = today or date.today().isoformat()
     suggested_name = str(normalized.get("suggested_filename") or "Документ")
     ext = file_ext or Path(suggested_name).suffix or ".pdf"
@@ -160,7 +185,13 @@ async def classify_document(temp_filepath: str, classify_only: bool = False) -> 
                 "уже используются имена членов семьи.\n"
                 "2. Категория (category): Это относительный путь к папке "
                 "(например, 'Личные документы/Виктория'). "
-                "Изучи существующую структуру папок. Если документ принадлежит конкретному "
+                "Изучи существующий плоский список папок и категорий. "
+                "КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО придумывать новые структуры папок или менять порядок компонентов пути "
+                "(например, использовать 'Медицина/Евгений' или 'Личные документы/Медицина/Евгений', "
+                "если правильная существующая папка называется 'Личные документы/Евгений/Медицина'). "
+                "Используй существующую вложенность папок как образец. Если папка уже существует, "
+                "ты обязан использовать её имя в точности так, как указано в списке. "
+                "Если документ принадлежит конкретному "
                 "члену семьи (например, Виктории), и у других членов семьи "
                 "есть свои личные папки (например, 'Личные документы/Евгений'), то для этого "
                 "человека должна быть предложена аналогичная личная папка "

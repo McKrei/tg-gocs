@@ -1,4 +1,4 @@
-import contextlib
+import html
 import time
 from pathlib import Path
 from typing import Any
@@ -7,9 +7,7 @@ from aiogram import Bot, F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 
-from src.agent.agent import classify_document, normalize_draft_metadata
-from src.agent.tools import find_similar_document
-from src.bot.keyboards import get_confirmation_keyboard, get_duplicate_confirmation_keyboard
+from src.bot.keyboards import get_analysis_start_keyboard
 from src.bot.states import DocumentProcessingStates
 from src.config import settings
 from src.utils.logger import get_logger
@@ -31,16 +29,21 @@ def _cleanup_files(files: list[str]) -> None:
             logger.error(f"Не удалось удалить временный файл {f}: {e}")
 
 
+def _h(text: Any) -> str:
+    """Экранирует спецсимволы HTML."""
+    return html.escape(str(text))
+
+
 def format_draft_message(draft: dict[str, Any], file_count: int) -> str:
     """Форматирует сообщение с черновиком метаданных."""
     header = "📄 Получен файл." if file_count == 1 else f"📄 Получен пакет из {file_count} файлов."
     return (
-        f"{header}\n\n"
+        f"<b>{header}</b>\n\n"
         f"Предлагаю следующие метаданные:\n"
-        f"📁 Категория: {draft.get('category', 'Не определено')}\n"
-        f"👤 Владелец: {draft.get('owner', 'Не определено')}\n"
-        f"📝 Имя файла: {draft.get('suggested_filename', 'document.pdf')}\n"
-        f"ℹ️ Описание: {draft.get('summary', 'Нет описания')}\n\n"
+        f"📁 Категория: {_h(draft.get('category', 'Не определено'))}\n"
+        f"👤 Владелец: {_h(draft.get('owner', 'Не определено'))}\n"
+        f"📝 Имя файла: <code>{_h(draft.get('suggested_filename', 'document.pdf'))}</code>\n"
+        f"ℹ️ Описание: {_h(draft.get('summary', 'Нет описания'))}\n\n"
         f"Можете уточнить любое поле текстом или сохранить как есть."
     )
 
@@ -55,16 +58,16 @@ def format_draft_message_with_warning(draft: dict[str, Any], file_count: int, si
         else f"найден похожий файл (похожесть {similarity}%)"
     )
     return (
-        f"{header}\n\n"
-        f"⚠️ **Внимание: {reason}!**\n"
-        f"📁 Категория: `{similar_doc['category']}`\n"
-        f"📝 Имя файла: `{similar_doc['saved_filename']}`\n"
-        f"ℹ️ Описание: {similar_doc['summary']}\n\n"
+        f"<b>{header}</b>\n\n"
+        f"⚠️ <b>Внимание: {_h(reason)}!</b>\n"
+        f"📁 Категория: <code>{_h(similar_doc['category'])}</code>\n"
+        f"📝 Имя файла: <code>{_h(similar_doc['saved_filename'])}</code>\n"
+        f"ℹ️ Описание: {_h(similar_doc['summary'])}\n\n"
         f"--- Предлагаемые метаданные нового документа ---\n"
-        f"📁 Категория: {draft.get('category', 'Не определено')}\n"
-        f"👤 Владелец: {draft.get('owner', 'Не определено')}\n"
-        f"📝 Имя файла: {draft.get('suggested_filename', 'document.pdf')}\n"
-        f"ℹ️ Описание: {draft.get('summary', 'Нет описания')}\n\n"
+        f"📁 Категория: {_h(draft.get('category', 'Не определено'))}\n"
+        f"👤 Владелец: {_h(draft.get('owner', 'Не определено'))}\n"
+        f"📝 Имя файла: <code>{_h(draft.get('suggested_filename', 'document.pdf'))}</code>\n"
+        f"ℹ️ Описание: {_h(draft.get('summary', 'Нет описания'))}\n\n"
         f"Вы можете заменить существующий документ, сохранить его как новый или отменить."
     )
 
@@ -115,75 +118,45 @@ async def process_incoming_file(
     files = data.get("files", [])
     files.append(str(temp_path))
 
-    if not data.get("draft"):
-        await state.set_state(DocumentProcessingStates.confirming)
-        status_msg = await message.answer("⏳ Анализирую документ, пожалуйста, подождите...")
+    await state.update_data(
+        files=files,
+        last_activity=current_time,
+    )
 
-        try:
-            draft = await classify_document(str(temp_path))
-        except Exception as e:
-            logger.error(f"Ошибка классификации: {e}")
-            draft = {
-                "category": "Нераспознано",
-                "suggested_filename": original_name,
-                "summary": "Не удалось проанализировать документ.",
-                "owner": "Неизвестно",
-            }
+    msg_id = data.get("msg_id")
+    reply_markup = get_analysis_start_keyboard()
 
-        draft = normalize_draft_metadata(draft, file_ext)
-        similar_doc = await find_similar_document(draft["category"], draft["suggested_filename"], draft["summary"])
-        duplicate_id = str(similar_doc["id"]) if similar_doc else None
-
-        await state.update_data(
-            files=files,
-            draft=draft,
-            duplicate_id=duplicate_id,
-            msg_id=status_msg.message_id,
-            last_activity=current_time,
-        )
-
-        if similar_doc:
-            text = format_draft_message_with_warning(draft, len(files), similar_doc)
-            reply_markup = get_duplicate_confirmation_keyboard(multi_file=False)
-        else:
-            text = format_draft_message(draft, len(files))
-            reply_markup = get_confirmation_keyboard(multi_file=False)
-
-        await status_msg.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
-
+    n = len(files)
+    if n % 10 == 1 and n % 100 != 11:
+        file_word = "файл"
+    elif n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+        file_word = "файла"
     else:
-        draft = data["draft"]
-        msg_id = data["msg_id"]
+        file_word = "файлов"
 
-        similar_doc = await find_similar_document(draft["category"], draft["suggested_filename"], draft["summary"])
-        duplicate_id = str(similar_doc["id"]) if similar_doc else None
+    text = (
+        f"📥 Получено {n} {file_word}.\n\n"
+        f"Вы можете отправить ещё файлы (фотографии и PDF будут склеены в один PDF-документ).\n\n"
+        f"Нажмите кнопку ниже, чтобы начать анализ."
+    )
 
-        await state.update_data(
-            files=files,
-            duplicate_id=duplicate_id,
-            last_activity=current_time,
-        )
-
-        if similar_doc:
-            text = format_draft_message_with_warning(draft, len(files), similar_doc)
-            reply_markup = get_duplicate_confirmation_keyboard(multi_file=True)
-        else:
-            text = format_draft_message(draft, len(files))
-            reply_markup = get_confirmation_keyboard(multi_file=True)
-
+    if not msg_id:
+        status_msg = await message.answer(text, reply_markup=reply_markup)
+        await state.update_data(msg_id=status_msg.message_id)
+    else:
         try:
             await bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=msg_id,
                 text=text,
                 reply_markup=reply_markup,
-                parse_mode="Markdown",
             )
         except Exception as e:
-            logger.warning(f"Не удалось обновить драфт-сообщение: {e}")
+            logger.warning(f"Не удалось обновить сообщение о получении файлов: {e}")
+            status_msg = await message.answer(text, reply_markup=reply_markup)
+            await state.update_data(msg_id=status_msg.message_id)
 
-        with contextlib.suppress(Exception):
-            await message.delete()
+
 
 
 @router.message(

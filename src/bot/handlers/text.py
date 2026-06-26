@@ -68,7 +68,7 @@ async def handle_refinement(message: types.Message, bot: Bot, state: FSMContext)
             message_id=msg_id,
             text=text,
             reply_markup=reply_markup,
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
     except Exception as e:
         logger.warning(f"Не удалось обновить драфт-сообщение: {e}")

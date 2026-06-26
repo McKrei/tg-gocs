@@ -75,7 +75,21 @@ async def _show_next_inbox_file(message: types.Message, state: FSMContext) -> No
 
         temp_path = await _download_to_temp(inbox_file.drive_id, inbox_file.name, inbox_file.mime_type)
         draft = await classify_document(str(temp_path), classify_only=True)
-        draft = normalize_draft_metadata(draft, temp_path.suffix)
+        from src.agent.tools import get_flat_directory_list
+        from src.db.engine import async_session
+        from src.db.repository import DocumentRepository
+        flat_dirs = get_flat_directory_list()
+        categories = []
+        try:
+            async with async_session() as session:
+                repo = DocumentRepository(session)
+                stats = await repo.get_stats_by_category()
+                categories = [cat for cat, _ in stats]
+        except Exception:
+            pass
+        all_existing_paths = list(set(flat_dirs + categories))
+
+        draft = normalize_draft_metadata(draft, temp_path.suffix, existing_paths=all_existing_paths)
         temp_path.unlink(missing_ok=True)
     except Exception as e:
         logger.error(f"Ошибка анализа inbox-файла {inbox_file.name}: {e}")

@@ -52,3 +52,13 @@ def get_inbox_duplicate_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🛑 Остановить", callback_data="inbox_stop"),
     )
     return builder.as_markup()
+
+
+def get_analysis_start_keyboard() -> InlineKeyboardMarkup:
+    """Возвращает клавиатуру с кнопкой 'Начать анализ'."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔍 Начать анализ", callback_data="start_analysis"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_save"),
+    )
+    return builder.as_markup()

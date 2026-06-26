@@ -5,7 +5,12 @@ import pytest
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 
-from src.bot.handlers.callbacks import handle_cancel_save, handle_confirm_save, handle_replace_save
+from src.bot.handlers.callbacks import (
+    handle_cancel_save,
+    handle_confirm_save,
+    handle_replace_save,
+    handle_start_analysis,
+)
 from src.bot.handlers.files import handle_photo
 from src.bot.handlers.text import handle_refinement
 from src.bot.states import DocumentProcessingStates
@@ -17,7 +22,7 @@ async def test_flow_save_end_to_end() -> None:
     # 1. Симулируем получение первого фото
     message_photo1 = AsyncMock()
     bot = AsyncMock()
-    state = AsyncMock(spec=FSMContext)
+    state = MagicMock(spec=FSMContext)
 
     photo1 = MagicMock(file_id="photo_1", file_size=500)
     message_photo1.photo = [photo1]
@@ -40,27 +45,16 @@ async def test_flow_save_end_to_end() -> None:
     state.update_data = AsyncMock(side_effect=mock_update_data)
     state.set_state = AsyncMock()
 
-    mock_draft = {
-        "category": "Медицина",
-        "suggested_filename": "polis.jpg",
-        "summary": "Медицинский полис",
-        "owner": "Муж",
-    }
-
     status_message = AsyncMock()
     status_message.message_id = 456
     message_photo1.answer = AsyncMock(return_value=status_message)
 
-    with patch("src.bot.handlers.files.classify_document", AsyncMock(return_value=mock_draft)):
-        await handle_photo(message_photo1, bot, state)
+    await handle_photo(message_photo1, bot, state)
 
-        # Проверяем, что установлен стейт и сохранены файлы
-        state.set_state.assert_called_once_with(DocumentProcessingStates.confirming)
-        assert len(fsm_data["files"]) == 1
-        assert fsm_data["files"][0].endswith("photo_1.jpg")
-        assert fsm_data["draft"]["category"] == mock_draft["category"]
-        assert fsm_data["draft"]["suggested_filename"] == f"{date.today().isoformat()} polis.jpg"
-        assert fsm_data["msg_id"] == 456
+    # Проверяем, что стейт не переведен при накоплении и сохранены файлы
+    assert len(fsm_data["files"]) == 1
+    assert fsm_data["files"][0].endswith("photo_1.jpg")
+    assert fsm_data["msg_id"] == 456
 
     # 2. Симулируем получение второго фото (пакетный режим)
     message_photo2 = AsyncMock()
@@ -77,14 +71,42 @@ async def test_flow_save_end_to_end() -> None:
     assert len(fsm_data["files"]) == 2
     bot.edit_message_text.assert_called_once()
 
-    # 3. Симулируем текстовую корректировку черновика
+    # 3. Симулируем вызов callback start_analysis
+    callback_start = AsyncMock()
+    callback_start.message = AsyncMock(spec=types.Message)
+    callback_start.message.edit_text = AsyncMock()
+    callback_start.message.chat = MagicMock()
+    callback_start.message.chat.id = 123
+    callback_start.message.message_id = 456
+
+    mock_draft = {
+        "category": "Медицина",
+        "suggested_filename": "polis.pdf",
+        "summary": "Медицинский полис",
+        "owner": "Муж",
+    }
+
+    with (
+        patch("src.bot.handlers.callbacks.classify_document", AsyncMock(return_value=mock_draft)),
+        patch("src.bot.handlers.callbacks.merge_files_to_pdf", AsyncMock()),
+    ):
+        await handle_start_analysis(callback_start, bot, state)
+
+        # Проверяем переход в стейт confirming и то, что в files теперь один склеенный файл
+        state.set_state.assert_called_once_with(DocumentProcessingStates.confirming)
+        assert len(fsm_data["files"]) == 1
+        assert "merged_" in fsm_data["files"][0]
+        assert fsm_data["draft"]["category"] == mock_draft["category"]
+        assert fsm_data["draft"]["suggested_filename"] == f"{date.today().isoformat()} polis.pdf"
+
+    # 4. Симулируем текстовую корректировку черновика
     message_text = AsyncMock()
     message_text.text = "нет, это полис жены"
     message_text.chat.id = 123
 
     refined_draft = {
         "category": "Медицина/Жена",
-        "suggested_filename": "polis_wife.jpg",
+        "suggested_filename": "polis_wife.pdf",
         "summary": "Медицинский полис жены",
         "owner": "Жена",
     }
@@ -98,7 +120,7 @@ async def test_flow_save_end_to_end() -> None:
         bot.edit_message_text.assert_called_once()
         message_text.delete.assert_called_once()
 
-    # 4. Симулируем подтверждение сохранения документов (confirm_save)
+    # 5. Симулируем подтверждение сохранения документов (confirm_save)
     callback = AsyncMock()
     callback.message = AsyncMock(spec=types.Message)
     callback.message.edit_text = AsyncMock()
@@ -112,7 +134,6 @@ async def test_flow_save_end_to_end() -> None:
     }
 
     with (
-        patch("src.bot.handlers.callbacks.convert_to_pdf", AsyncMock(return_value="data/temp/merged.pdf")),
         patch("src.bot.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
         patch("src.bot.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
         patch("src.bot.handlers.callbacks.async_session") as mock_session_maker,
@@ -128,7 +149,6 @@ async def test_flow_save_end_to_end() -> None:
 
             await handle_confirm_save(callback, bot, state)
 
-            # Проверяем склеивание (так как файлов 2), выгрузку и сохранение в БД
             mock_repo.add_document.assert_called_once()
             mock_session.commit.assert_called_once()
             state.clear.assert_called_once()

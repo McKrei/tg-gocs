@@ -6,8 +6,6 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from PIL import Image
-
 from src.config import settings
 from src.db.engine import async_session
 from src.db.repository import DocumentRepository
@@ -50,15 +48,35 @@ async def get_directory_tree(path_prefix: str = "") -> str:
     return "\n".join(lines)
 
 
+def get_flat_directory_list() -> list[str]:
+    """Возвращает список относительных путей всех папок в локальном хранилище."""
+    if not settings.storage.local_storage_enabled:
+        return []
+
+    storage_root = Path(settings.storage.local_storage_dir).resolve()
+    if not storage_root.exists():
+        return []
+
+    paths: list[str] = []
+    for p in storage_root.rglob("*"):
+        if p.is_dir():
+            try:
+                rel = p.relative_to(storage_root)
+                paths.append(str(rel))
+            except ValueError:
+                continue
+    return sorted(paths)
+
+
 async def get_existing_structure() -> str:
-    """Возвращает описание существующей структуры папок и категорий."""
+    """Возвращает описание существующей структуры папок и категорий в виде плоского списка относительных путей."""
     from sqlalchemy import select
 
     from src.db.models import Document
     from src.db.repository import DocumentRepository
     from src.utils.logger import get_logger
 
-    tree = await get_directory_tree()
+    flat_dirs = get_flat_directory_list()
     categories = []
     owners = []
 
@@ -74,15 +92,11 @@ async def get_existing_structure() -> str:
         get_logger(__name__).error(f"Ошибка получения структуры из БД: {e}")
 
     lines = []
-    if tree and tree != ".":
-        lines.append("Существующая структура папок на диске:")
-        lines.append(tree)
-        lines.append("")
-
-    if categories:
-        lines.append("Используемые категории в базе данных:")
-        for cat in categories:
-            lines.append(f"- {cat}")
+    all_paths = sorted(set(flat_dirs + categories))
+    if all_paths:
+        lines.append("Существующие папки и категории документов (используй их в точности как образец пути):")
+        for path in all_paths:
+            lines.append(f"- {path}")
         lines.append("")
 
     if owners:
@@ -212,23 +226,53 @@ async def create_directory(path: str) -> bool:
         return False
 
 
+async def merge_files_to_pdf(file_paths: list[str], output_path: str) -> None:
+    """Объединяет список файлов (изображений и/или PDF) в один PDF-файл."""
+    import asyncio
+
+    def _merge() -> None:
+        import pypdf
+        from PIL import Image
+
+        writer = pypdf.PdfWriter()
+        temp_pdfs: list[Path] = []
+
+        try:
+            for path_str in file_paths:
+                path = Path(path_str)
+                if not path.exists():
+                    continue
+
+                if path.suffix.lower() == ".pdf":
+                    writer.append(str(path))
+                elif path.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
+                    img = Image.open(path).convert("RGB")
+                    temp_pdf = path.with_suffix(path.suffix + ".pdf")
+                    img.save(temp_pdf, "PDF")
+                    temp_pdfs.append(temp_pdf)
+                    writer.append(str(temp_pdf))
+                else:
+                    logger.warning(f"Пропущен неподдерживаемый тип файла при склеивании: {path.name}")
+
+            with Path(output_path).open("wb") as f:
+                writer.write(f)
+        finally:
+            writer.close()
+            for tp in temp_pdfs:
+                try:
+                    tp.unlink(missing_ok=True)
+                except Exception as e:
+                    logger.error(f"Не удалось удалить временный PDF {tp}: {e}")
+
+    await asyncio.to_thread(_merge)
+
+
 async def convert_to_pdf(temp_file_ids: list[str], output_filename: str) -> str:
     """Конвертирует список временных файлов в один PDF-файл. Возвращает путь к нему."""
     temp_dir = Path(settings.storage.temp_dir)
-    images = []
-
-    for file_id in temp_file_ids:
-        file_path = temp_dir / file_id
-        if file_path.exists():
-            img = Image.open(file_path).convert("RGB")
-            images.append(img)
-
-    if not images:
-        raise ValueError("Нет доступных изображений для конвертации.")
-
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    full_paths = [str(temp_dir / fid) for fid in temp_file_ids]
     output_path = temp_dir / output_filename
-    images[0].save(output_path, save_all=True, append_images=images[1:])
+    await merge_files_to_pdf(full_paths, str(output_path))
     return str(output_path)
 
 
