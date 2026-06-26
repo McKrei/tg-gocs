@@ -113,19 +113,18 @@ async def handle_start_analysis(callback: types.CallbackQuery, bot: Bot, state: 
     if isinstance(callback.message, types.Message):
         await callback.message.edit_text("⏳ Объединяю файлы и анализирую, пожалуйста, подождите...", reply_markup=None)
 
-    temp_dir = Path(settings.storage.temp_dir)
-    merged_filename = f"merged_{uuid.uuid4()}.pdf"
-    merged_path = temp_dir / merged_filename
-
     try:
-        if len(files) == 1 and Path(files[0]).suffix.lower() == ".pdf":
+        if len(files) == 1:
             merged_path = Path(files[0])
         else:
+            temp_dir = Path(settings.storage.temp_dir)
+            merged_filename = f"merged_{uuid.uuid4()}.pdf"
+            merged_path = temp_dir / merged_filename
             await merge_files_to_pdf(files, str(merged_path))
     except Exception as e:
-        logger.error(f"Ошибка при объединении файлов: {e}")
+        logger.error(f"Ошибка при обработке файлов: {e}")
         if isinstance(callback.message, types.Message):
-            await callback.message.edit_text("❌ Произошла ошибка при объединении файлов.")
+            await callback.message.edit_text("❌ Произошла ошибка при обработке файлов.")
         _cleanup_files(files)
         await state.clear()
         return
@@ -153,7 +152,8 @@ async def handle_start_analysis(callback: types.CallbackQuery, bot: Bot, state: 
         pass
     all_existing_paths = list(set(flat_dirs + categories))
 
-    draft = normalize_draft_metadata(draft, ".pdf", existing_paths=all_existing_paths)
+    suffix = merged_path.suffix.lower()
+    draft = normalize_draft_metadata(draft, suffix, existing_paths=all_existing_paths)
     similar_doc = await find_similar_document(draft["category"], draft["suggested_filename"], draft["summary"])
     duplicate_id = str(similar_doc["id"]) if similar_doc else None
 
@@ -209,6 +209,8 @@ async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FS
     except Exception as e:
         logger.error(f"Ошибка при сохранении документа: {e}")
         await callback.answer("Произошла ошибка при сохранении файла.", show_alert=True)
+        if isinstance(callback.message, types.Message):
+            await callback.message.edit_text(f"❌ Ошибка при сохранении документа: {html.escape(str(e))}")
     finally:
         all_to_clean = list(set(files + data.get("original_files", [])))
         _cleanup_files(all_to_clean)
@@ -250,6 +252,8 @@ async def handle_replace_save(callback: types.CallbackQuery, bot: Bot, state: FS
     except Exception as e:
         logger.error(f"Ошибка при сохранении нового документа взамен старого: {e}")
         await callback.answer("Произошла ошибка при сохранении нового файла.", show_alert=True)
+        if isinstance(callback.message, types.Message):
+            await callback.message.edit_text(f"❌ Ошибка при сохранении нового документа: {html.escape(str(e))}")
     finally:
         all_to_clean = list(set(files + data.get("original_files", [])))
         _cleanup_files(all_to_clean)

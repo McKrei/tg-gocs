@@ -20,6 +20,10 @@ def _normalize_vector(vector: list[float]) -> list[float]:
 @with_retry(attempts=3, initial_delay=1.0)
 async def get_embedding(text: str) -> list[float]:
     """Получает L2-нормализованный эмбеддинг текста через OpenRouter."""
+    cleaned_text = (text or "").strip()
+    if not cleaned_text:
+        cleaned_text = "Семейный документ"
+
     dim = settings.llm.embedding_dim
     url = f"{settings.llm.base_url}/embeddings"
     headers = {
@@ -28,7 +32,7 @@ async def get_embedding(text: str) -> list[float]:
     }
     payload = {
         "model": settings.llm.embedding_model_name,
-        "input": text,
+        "input": cleaned_text,
         "dimensions": dim,
     }
 
@@ -45,5 +49,5 @@ async def get_embedding(text: str) -> list[float]:
             return _normalize_vector(raw_embedding)
 
         except Exception as e:
-            logger.error(f"Ошибка при получении эмбеддинга для '{text[:30]}...': {e}")
+            logger.error(f"Ошибка при получении эмбеддинга для '{cleaned_text[:30]}...': {e}")
             raise
