@@ -17,7 +17,6 @@ def _normalize_vector(vector: list[float]) -> list[float]:
     return [x / l2_norm for x in vector]
 
 
-
 @with_retry(attempts=3, initial_delay=1.0)
 async def get_embedding(text: str) -> list[float]:
     """Получает L2-нормализованный эмбеддинг текста через OpenRouter."""
@@ -48,4 +47,3 @@ async def get_embedding(text: str) -> list[float]:
         except Exception as e:
             logger.error(f"Ошибка при получении эмбеддинга для '{text[:30]}...': {e}")
             raise
-

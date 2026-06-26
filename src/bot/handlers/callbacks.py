@@ -71,11 +71,7 @@ async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FS
             else "☁️ Google Drive: Не настроен"
         )
 
-        text = (
-            f"✅ Документ успешно сохранен!\n\n"
-            f"📁 Локально: `{save_result['local_path']}`\n"
-            f"{gdrive_text}"
-        )
+        text = f"✅ Документ успешно сохранен!\n\n📁 Локально: `{save_result['local_path']}`\n{gdrive_text}"
 
         if isinstance(callback.message, types.Message):
             await callback.message.edit_text(text, parse_mode="Markdown")

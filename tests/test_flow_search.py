@@ -74,10 +74,12 @@ async def test_handle_search_found(tmp_path) -> None:
         "explanation": "Этот документ подходит.",
     }
 
-    with patch("src.bot.handlers.search.vector_search", AsyncMock(return_value=mock_search_results)), \
-         patch("src.bot.handlers.search.rerank_documents", AsyncMock(return_value=mock_rerank)):
+    with (
+        patch("src.bot.handlers.search.vector_search", AsyncMock(return_value=mock_search_results)),
+        patch("src.bot.handlers.search.rerank_documents", AsyncMock(return_value=mock_rerank)),
+    ):
         await handle_search(message, bot)
-        
+
         # Проверяем, что отправлен документ
         message.answer_document.assert_called_once()
         args, kwargs = message.answer_document.call_args
@@ -101,7 +103,9 @@ async def test_handle_search_not_found() -> None:
         "explanation": "Ничего не найдено.",
     }
 
-    with patch("src.bot.handlers.search.vector_search", AsyncMock(return_value=mock_search_results)), \
-         patch("src.bot.handlers.search.rerank_documents", AsyncMock(return_value=mock_rerank)):
+    with (
+        patch("src.bot.handlers.search.vector_search", AsyncMock(return_value=mock_search_results)),
+        patch("src.bot.handlers.search.rerank_documents", AsyncMock(return_value=mock_rerank)),
+    ):
         await handle_search(message, bot)
         message.answer.assert_called_once_with("Ничего не найдено.")

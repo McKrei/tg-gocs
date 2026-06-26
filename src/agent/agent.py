@@ -15,7 +15,6 @@ from src.utils.retry import with_retry
 logger = get_logger(__name__)
 
 
-
 def encode_image(image_path: str) -> str:
     """Кодирует файл изображения в строку формата base64."""
     with Path(image_path).open("rb") as image_file:
@@ -42,7 +41,6 @@ def parse_json_content(content: str) -> dict[str, Any]:
             except json.JSONDecodeError as e_inner:
                 raise ValueError(f"Не удалось распарсить извлеченный JSON: {match.group(1)}") from e_inner
         raise ValueError(f"Ответ модели не содержит валидного JSON: {content}") from e
-
 
 
 @with_retry(attempts=3, initial_delay=1.0)

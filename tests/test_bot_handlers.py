@@ -14,8 +14,7 @@ async def test_cmd_start() -> None:
     message = AsyncMock()
     await cmd_start(message)
     message.answer.assert_called_once_with(
-        "Привет! Я бот для управления семейными документами.\n"
-        "Отправь мне файл (изображение или PDF) для классификации."
+        "Привет! Я бот для управления семейными документами.\nОтправь мне файл (изображение или PDF) для классификации."
     )
 
 
@@ -125,7 +124,7 @@ async def test_cmd_list_empty() -> None:
     with patch("src.bot.handlers.commands.async_session") as mock_session_maker:
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
-        
+
         with patch("src.bot.handlers.commands.DocumentRepository") as mock_repo_class:
             mock_repo = MagicMock()
             mock_repo.get_recent_documents = AsyncMock(return_value=[])
@@ -139,7 +138,7 @@ async def test_cmd_list_empty() -> None:
 async def test_cmd_list_with_items() -> None:
     """Проверяет команду /list, когда в БД есть документы."""
     message = AsyncMock()
-    
+
     mock_doc = MagicMock()
     mock_doc.saved_filename = "file.pdf"
     mock_doc.category = "Медицина"
@@ -150,7 +149,7 @@ async def test_cmd_list_with_items() -> None:
     with patch("src.bot.handlers.commands.async_session") as mock_session_maker:
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
-        
+
         with patch("src.bot.handlers.commands.DocumentRepository") as mock_repo_class:
             mock_repo = MagicMock()
             mock_repo.get_recent_documents = AsyncMock(return_value=[mock_doc])
@@ -171,7 +170,7 @@ async def test_cmd_stats() -> None:
     with patch("src.bot.handlers.commands.async_session") as mock_session_maker:
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
-        
+
         # Мокаем общее количество документов
         mock_result = MagicMock()
         mock_result.scalar_one = MagicMock(return_value=5)
@@ -187,4 +186,3 @@ async def test_cmd_stats() -> None:
             assert "Всего документов: *5*" in message.answer.call_args[0][0]
             assert "Медицина: *3*" in message.answer.call_args[0][0]
             assert "Документы: *2*" in message.answer.call_args[0][0]
-

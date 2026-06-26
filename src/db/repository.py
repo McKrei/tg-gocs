@@ -134,6 +134,7 @@ class DocumentRepository:
     async def get_stats_by_category(self) -> list[tuple[str, int]]:
         """Возвращает количество документов по категориям."""
         from sqlalchemy import func
+
         stmt = (
             select(Document.category, func.count(Document.id))
             .group_by(Document.category)

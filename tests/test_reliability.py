@@ -14,7 +14,7 @@ async def test_file_too_large() -> None:
     message = AsyncMock()
     bot = AsyncMock()
     state = AsyncMock()
-    
+
     # Файл размером 60 МБ при лимите 50 МБ
     photo = MagicMock(file_id="large_photo", file_size=60 * 1024 * 1024)
     message.photo = [photo]
@@ -23,9 +23,7 @@ async def test_file_too_large() -> None:
         mock_settings.storage.max_file_size_mb = 50
         await handle_photo(message, bot, state)
 
-        message.answer.assert_called_once_with(
-            "Файл слишком большой. Максимальный размер: 50 МБ."
-        )
+        message.answer.assert_called_once_with("Файл слишком большой. Максимальный размер: 50 МБ.")
         # Убеждаемся, что бот не пытался скачать файл
         bot.download.assert_not_called()
 
@@ -74,7 +72,7 @@ async def test_drive_unavailable_fallback() -> None:
             "suggested_filename": "polis.jpg",
             "summary": "Медицинский полис",
             "owner": "Муж",
-        }
+        },
     }
     state.get_data = AsyncMock(return_value=fsm_data)
 
@@ -83,11 +81,12 @@ async def test_drive_unavailable_fallback() -> None:
         "gdrive_link": None,  # Drive недоступен
     }
 
-    with patch("src.bot.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)), \
-         patch("src.bot.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)), \
-         patch("src.bot.handlers.callbacks.async_session") as mock_session_maker, \
-         patch("src.bot.handlers.callbacks._cleanup_files"):
-
+    with (
+        patch("src.bot.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
+        patch("src.bot.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
+        patch("src.bot.handlers.callbacks.async_session") as mock_session_maker,
+        patch("src.bot.handlers.callbacks._cleanup_files"),
+    ):
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
 

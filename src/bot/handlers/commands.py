@@ -14,8 +14,7 @@ router = Router()
 async def cmd_start(message: types.Message) -> None:
     """Приветственное сообщение для команды /start."""
     await message.answer(
-        "Привет! Я бот для управления семейными документами.\n"
-        "Отправь мне файл (изображение или PDF) для классификации."
+        "Привет! Я бот для управления семейными документами.\nОтправь мне файл (изображение или PDF) для классификации."
     )
 
 
@@ -36,7 +35,7 @@ async def cmd_help(message: types.Message) -> None:
         "Просто отправьте мне одну или несколько фотографий/PDF-файлов. "
         "Я проанализирую их, предложу категорию, имя и описание, а затем сохраню.\n\n"
         "🔍 *Поиск документов:*\n"
-        "Напишите мне обычным текстом, что вы ищете (например: \"найди паспорт мужа\").\n\n"
+        'Напишите мне обычным текстом, что вы ищете (например: "найди паспорт мужа").\n\n'
         "📋 *Команды управления:*\n"
         "/start — Начать работу с ботом\n"
         "/help — Показать эту справку\n"
@@ -74,7 +73,7 @@ async def cmd_stats(message: types.Message) -> None:
     async with async_session() as session:
         repo = DocumentRepository(session)
         stats = await repo.get_stats_by_category()
-        
+
         total_stmt = select(func.count(Document.id))
         total_result = await session.execute(total_stmt)
         total_count = total_result.scalar_one()

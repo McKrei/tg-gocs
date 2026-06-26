@@ -18,7 +18,7 @@ async def refine_draft(old_draft: dict[str, Any], user_feedback: str) -> dict[st
     prompt = (
         "Ты — помощник, который корректирует черновик метаданных документа на основе фидбека пользователя.\n"
         f"Текущий черновик:\n{json.dumps(old_draft, ensure_ascii=False)}\n\n"
-        f"Замечание пользователя:\n\"{user_feedback}\"\n\n"
+        f'Замечание пользователя:\n"{user_feedback}"\n\n'
         "Обнови черновик. Верни строго JSON-объект со следующими ключами:\n"
         "- category: строка, относительный путь (например, 'Медицина/Жена')\n"
         "- suggested_filename: строка, имя файла с расширением (например, 'Polis.pdf')\n"

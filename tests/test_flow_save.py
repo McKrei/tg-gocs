@@ -109,12 +109,13 @@ async def test_flow_save_end_to_end() -> None:
         "gdrive_link": "https://drive.google.com/polis_wife",
     }
 
-    with patch("src.bot.handlers.callbacks.convert_to_pdf", AsyncMock(return_value="data/temp/merged.pdf")), \
-         patch("src.bot.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)), \
-         patch("src.bot.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)), \
-         patch("src.bot.handlers.callbacks.async_session") as mock_session_maker, \
-         patch("src.bot.handlers.callbacks._cleanup_files") as mock_cleanup:
-
+    with (
+        patch("src.bot.handlers.callbacks.convert_to_pdf", AsyncMock(return_value="data/temp/merged.pdf")),
+        patch("src.bot.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
+        patch("src.bot.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
+        patch("src.bot.handlers.callbacks.async_session") as mock_session_maker,
+        patch("src.bot.handlers.callbacks._cleanup_files") as mock_cleanup,
+    ):
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
 

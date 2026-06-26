@@ -62,7 +62,6 @@ def _upload_file_sync(local_filepath: str, target_path: str) -> str:
     return str(uploaded_file["webViewLink"])
 
 
-
 @with_retry(attempts=3, initial_delay=1.0)
 async def _upload_file_with_retry(local_filepath: str, target_path: str) -> str:
     """Выполняет выгрузку файла с повторными попытками."""

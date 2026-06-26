@@ -15,6 +15,7 @@ def with_retry(
     exceptions: tuple[type[BaseException], ...] = (Exception,),
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Декоратор для повторного выполнения асинхронных функций при ошибках."""
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -33,5 +34,7 @@ def with_retry(
                     await asyncio.sleep(delay)
                     delay *= backoff_factor
             return None
+
         return wrapper
+
     return decorator

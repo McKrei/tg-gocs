@@ -22,7 +22,7 @@ async def rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict[
         return {"best_match_id": None, "explanation": "Документы не найдены."}
 
     client = get_llm_client()
-    
+
     docs_subset = [
         {
             "id": doc["id"],
@@ -47,7 +47,7 @@ async def rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict[
         "- explanation: строка (краткое описание найденного документа и почему он подходит, "
         "либо вежливый отказ/уточнение, если ничего не найдено)\n\n"
         f"Список документов:\n{json.dumps(docs_subset, ensure_ascii=False)}\n\n"
-        f"Запрос пользователя:\n\"{query}\"\n"
+        f'Запрос пользователя:\n"{query}"\n'
     )
 
     try:
@@ -75,7 +75,7 @@ async def handle_search(message: types.Message, bot: Bot) -> None:
     try:
         search_results = await vector_search(query, limit=5)
         rerank_result = await rerank_documents(query, search_results)
-        
+
         best_match_id = rerank_result.get("best_match_id")
         explanation = rerank_result.get("explanation", "")
 
@@ -103,6 +103,7 @@ async def handle_search(message: types.Message, bot: Bot) -> None:
             caption += f"\n☁️ [Открыть в Google Drive]({gdrive_link})"
 
         from pathlib import Path
+
         doc_path = Path(local_path)
         if doc_path.exists():
             file_input = types.FSInputFile(str(doc_path), filename=filename)

@@ -55,9 +55,7 @@ async def process_incoming_file(
     # 1. Проверка размера файла
     max_bytes = settings.storage.max_file_size_mb * 1024 * 1024
     if file_size > max_bytes:
-        await message.answer(
-            f"Файл слишком большой. Максимальный размер: {settings.storage.max_file_size_mb} МБ."
-        )
+        await message.answer(f"Файл слишком большой. Максимальный размер: {settings.storage.max_file_size_mb} МБ.")
         return
 
     # 2. Ограничение частоты запросов (Rate Limiting)
@@ -181,11 +179,7 @@ async def handle_document(message: types.Message, bot: Bot, state: FSMContext) -
     mime = doc.mime_type or ""
     file_ext = Path(doc.file_name or "").suffix.lower()
 
-    is_valid = (
-        mime.startswith("image/")
-        or mime == "application/pdf"
-        or file_ext in [".pdf", ".jpg", ".jpeg", ".png"]
-    )
+    is_valid = mime.startswith("image/") or mime == "application/pdf" or file_ext in [".pdf", ".jpg", ".jpeg", ".png"]
 
     if not is_valid:
         await message.answer("Пожалуйста, отправьте документ в формате PDF или изображение (JPEG, PNG).")

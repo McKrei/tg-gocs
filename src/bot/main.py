@@ -25,7 +25,6 @@ async def main() -> None:
     dp.include_router(search.router)
     dp.include_router(files.router)
 
-
     logger.info("Запуск Telegram-бота...")
     await dp.start_polling(bot)
 

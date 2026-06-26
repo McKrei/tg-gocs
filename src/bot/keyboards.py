@@ -11,4 +11,3 @@ def get_confirmation_keyboard(multi_file: bool = False) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_save"),
     )
     return builder.as_markup()
-
