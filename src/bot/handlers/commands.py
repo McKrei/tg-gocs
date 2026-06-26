@@ -19,6 +19,8 @@ async def cmd_start(message: types.Message) -> None:
         "🔍 /search — найти документ\n"
         "📋 /list — последние 10 документов\n"
         "📊 /stats — статистика по категориям\n"
+        "📥 /inbox — обработать новые файлы из inbox\n"
+        "🔄 /sync — синхронизировать Drive с базой данных\n"
         "❓ /help — справка"
     )
 
@@ -67,6 +69,11 @@ async def cmd_help(message: types.Message) -> None:
         "🔍 *Поиск документа:*\n"
         "/search — бот попросит написать запрос.\n"
         "/search паспорт мужа — поиск сразу с запросом.\n\n"
+        "📥 *Inbox:*\n"
+        "/inbox — обработать файлы из inbox-папки Google Drive по одному.\n\n"
+        "🔄 *Синхронизация:*\n"
+        "/sync — рекурсивно обойти Google Drive и проиндексировать\n"
+        "все новые файлы, которых ещё нет в базе данных.\n\n"
         "📋 *Управление:*\n"
         "/list — список последних 10 документов\n"
         "/stats — статистика по категориям\n"
@@ -136,3 +143,33 @@ async def cmd_stats(message: types.Message) -> None:
     for category, count in stats:
         text += f"📁 {category}: *{count}*\n"
     await message.answer(text, parse_mode="Markdown")
+
+
+@router.message(Command("sync"))
+async def cmd_sync(message: types.Message) -> None:
+    """Синхронизирует Google Drive с базой данных."""
+    from src.services.sync import sync_drive_to_db
+
+    status = await message.answer("🔄 Запускаю синхронизацию Google Drive → БД...\nЭто может занять несколько минут.")
+    try:
+        result = await sync_drive_to_db()
+        parts = ["✅ Синхронизация завершена!\n"]
+        parts.append(f"📥 Добавлено: *{result.added}*")
+        parts.append(f"⏩ Пропущено (уже в БД): *{result.skipped}*")
+        if result.errors:
+            parts.append(f"❌ Ошибок: *{result.errors}*")
+            if result.error_details:
+                details = "\n".join(f"  • {d}" for d in result.error_details[:5])
+                parts.append(f"Детали ошибок:\n{details}")
+        await status.edit_text("\n".join(parts), parse_mode="Markdown")
+    except Exception as e:
+        await status.edit_text(f"❌ Ошибка синхронизации: {e}")
+
+
+@router.message(Command("inbox"))
+async def cmd_inbox(message: types.Message, state: FSMContext) -> None:
+    """Запускает обработку файлов из inbox-папки."""
+    from src.bot.handlers.inbox import start_inbox_processing
+
+    await state.clear()
+    await start_inbox_processing(message, state)

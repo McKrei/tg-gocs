@@ -62,14 +62,25 @@ class DBConfig(BaseSettings):
 class StorageConfig(BaseSettings):
     """Настройки локального хранилища и Google Drive."""
 
-    local_storage_dir: str = Field("data/documents", alias="LOCAL_STORAGE_DIR")
+    local_storage_dir: str = Field("", alias="LOCAL_STORAGE_DIR")
     temp_dir: str = Field("data/temp", alias="TEMP_DIR")
     gdrive_credentials_path: str = Field("data/credentials.json", alias="GDRIVE_CREDENTIALS_PATH")
     gdrive_token_path: str = Field("data/token.json", alias="GDRIVE_TOKEN_PATH")
     gdrive_root_folder_id: str = Field(..., alias="GDRIVE_ROOT_FOLDER_ID")
+    gdrive_inbox_folder_id: str = Field("", alias="GDRIVE_INBOX_FOLDER_ID")
     max_file_size_mb: int = Field(50, alias="MAX_FILE_SIZE_MB")
     rate_limit_per_minute: int = Field(10, alias="RATE_LIMIT_PER_MINUTE")
     session_ttl_seconds: int = Field(1800, alias="SESSION_TTL_SECONDS")
+
+    @property
+    def local_storage_enabled(self) -> bool:
+        """Включено ли локальное хранилище."""
+        return bool(self.local_storage_dir)
+
+    @property
+    def inbox_enabled(self) -> bool:
+        """Включена ли папка inbox в Google Drive."""
+        return bool(self.gdrive_inbox_folder_id)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

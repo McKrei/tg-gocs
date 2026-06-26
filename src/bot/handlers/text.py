@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from src.agent.tools import find_similar_document
 from src.bot.handlers.files import format_draft_message, format_draft_message_with_warning
 from src.bot.keyboards import get_confirmation_keyboard, get_duplicate_confirmation_keyboard
-from src.bot.states import DocumentProcessingStates
+from src.bot.states import DocumentProcessingStates, InboxStates
 from src.llm.refiner import refine_draft
 from src.utils.logger import get_logger
 
@@ -27,11 +27,8 @@ async def handle_text_while_waiting_file(message: types.Message) -> None:
 @router.message(DocumentProcessingStates.confirming)
 async def handle_refinement(message: types.Message, bot: Bot, state: FSMContext) -> None:
     """Обрабатывает текстовые поправки пользователя к черновику документа."""
-    # Если пришло не текстовое сообщение, игнорируем
     if not message.text:
         return
-
-    # Если это команда, не перехватываем её (пусть обрабатывается commands.py)
     if message.text.startswith("/"):
         return
 
@@ -43,10 +40,8 @@ async def handle_refinement(message: types.Message, bot: Bot, state: FSMContext)
     if not old_draft or not msg_id:
         return
 
-    # Показываем статус набора текста
     await bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
-    # Корректируем черновик через LLM
     new_draft = await refine_draft(old_draft, message.text)
     current_time = time.time()
     similar_doc = await find_similar_document(
@@ -78,6 +73,63 @@ async def handle_refinement(message: types.Message, bot: Bot, state: FSMContext)
     except Exception as e:
         logger.warning(f"Не удалось обновить драфт-сообщение: {e}")
 
-    # Удаляем текстовое сообщение пользователя, чтобы не засорять чат
+    with contextlib.suppress(Exception):
+        await message.delete()
+
+
+@router.message(InboxStates.confirming)
+async def handle_inbox_refinement(message: types.Message, bot: Bot, state: FSMContext) -> None:
+    """Обрабатывает текстовые уточнения пользователя к inbox-черновику."""
+    if not message.text:
+        return
+    if message.text.startswith("/"):
+        return
+
+    data = await state.get_data()
+    old_draft = data.get("current_draft")
+    file_data = data.get("current_file")
+    queue = data.get("inbox_queue", [])
+
+    if not old_draft or not file_data:
+        return
+
+    await bot.send_chat_action(chat_id=message.chat.id, action="typing")
+
+    new_draft = await refine_draft(old_draft, message.text)
+    similar_doc = await find_similar_document(
+        new_draft["category"], new_draft["suggested_filename"], new_draft["summary"]
+    )
+    duplicate_id = str(similar_doc["id"]) if similar_doc else None
+
+    await state.update_data(
+        current_draft=new_draft,
+        duplicate_id=duplicate_id,
+        inbox_queue=queue,
+    )
+
+    from src.bot.handlers.inbox import _format_inbox_draft_message
+    from src.services.sync import InboxFile
+
+    inbox_file = InboxFile(**file_data)
+    remaining = len(queue)
+    text, keyboard = _format_inbox_draft_message(new_draft, inbox_file, similar_doc, remaining)
+
+    current_msg_id = data.get("current_msg_id")
+    if current_msg_id:
+        with contextlib.suppress(Exception):
+            await bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=current_msg_id,
+                text=text,
+                reply_markup=keyboard,
+                parse_mode="HTML",
+            )
+            with contextlib.suppress(Exception):
+                await message.delete()
+            return
+
+    sent = await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+    await state.update_data(current_msg_id=sent.message_id)
+
     with contextlib.suppress(Exception):
         await message.delete()

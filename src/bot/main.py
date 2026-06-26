@@ -3,7 +3,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from src.bot.handlers import callbacks, commands, files, search, text
+from src.bot.handlers import callbacks, commands, files, inbox, search, text
 from src.bot.middleware.auth import AuthMiddleware
 from src.config import settings
 from src.db.engine import init_db
@@ -22,6 +22,7 @@ async def main() -> None:
 
     dp.include_router(commands.router)
     dp.include_router(callbacks.router)
+    dp.include_router(inbox.router)
     dp.include_router(text.router)
     dp.include_router(search.router)
     dp.include_router(files.router)

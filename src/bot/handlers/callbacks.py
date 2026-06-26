@@ -1,4 +1,6 @@
+import uuid
 from pathlib import Path
+from typing import Any
 
 from aiogram import Bot, F, Router, types
 from aiogram.fsm.context import FSMContext
@@ -20,9 +22,75 @@ router = Router()
 logger = get_logger(__name__)
 
 
+def _format_gdrive_result(save_result: dict[str, Any], target_path: str) -> str:
+    """Форматирует строку результата для отображения пользователю."""
+    if save_result["gdrive_link"]:
+        folder_link = save_result.get("gdrive_folder_link")
+        folder_md = f" | [открыть папку]({folder_link})" if folder_link else ""
+        return f"☁️ Google Drive: `{target_path}`\n[открыть файл]({save_result['gdrive_link']}){folder_md}"
+    if save_result.get("gdrive_error"):
+        return f"☁️ Google Drive: ошибка загрузки — {save_result['gdrive_error']}"
+    return "☁️ Google Drive: не настроен"
+
+
+async def _prepare_file_for_save(files: list[str], suggested_filename: str) -> str:
+    """Подготавливает финальный файл: склеивает мульти-файлы в PDF или возвращает единственный."""
+    if len(files) > 1:
+        file_ids = [Path(f).name for f in files]
+        return await convert_to_pdf(file_ids, suggested_filename)
+    return files[0]
+
+
+async def _persist_document(
+    draft: dict[str, Any],
+    save_result: dict[str, Any],
+    suggested_filename: str,
+) -> None:
+    """Сохраняет документ и эмбеддинг в БД."""
+    embedding = await get_embedding(draft["summary"])
+    async with async_session() as session:
+        repo = DocumentRepository(session)
+        await repo.add_document(
+            saved_filename=suggested_filename,
+            local_path=save_result["local_path"] or f"{draft['category']}/{suggested_filename}",
+            category=draft["category"],
+            owner=draft["owner"],
+            summary=draft["summary"],
+            embedding=embedding,
+            gdrive_link=save_result["gdrive_link"],
+        )
+        await session.commit()
+
+
+async def _delete_old_document(duplicate_id: str) -> None:
+    """Удаляет старый документ из БД, локального FS и Google Drive."""
+    try:
+        dup_uuid = uuid.UUID(duplicate_id)
+        async with async_session() as session:
+            repo = DocumentRepository(session)
+            old_doc = await repo.get_document(dup_uuid)
+            if old_doc:
+                old_local = Path(old_doc.local_path)
+                if old_local.exists():
+                    try:
+                        old_local.unlink()
+                    except Exception as e:
+                        logger.error(f"Не удалось удалить локальный файл {old_doc.local_path}: {e}")
+
+                if old_doc.gdrive_link:
+                    file_id = extract_gdrive_file_id(old_doc.gdrive_link)
+                    if file_id:
+                        await delete_file_from_drive(file_id)
+
+                await repo.delete_document(dup_uuid)
+                await session.commit()
+    except Exception as e:
+        logger.error(f"Ошибка при удалении старого документа {duplicate_id}: {e}")
+
+
 @router.callback_query(F.data == "confirm_save")
 async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FSMContext) -> None:
-    """Обрабатывает подтверждение сохранения документа (включая склеивание мультифайлов)."""
+    """Обрабатывает подтверждение сохранения документа."""
     data = await state.get_data()
     files = data.get("files", [])
     draft = data.get("draft")
@@ -38,51 +106,17 @@ async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FS
 
     category = draft["category"]
     suggested_filename = get_unique_filename(category, draft["suggested_filename"])
-    summary = draft["summary"]
-    owner = draft["owner"]
+    target_path = f"{category}/{suggested_filename}"
 
     final_temp_path = None
     try:
-        if len(files) > 1:
-            file_ids = [Path(f).name for f in files]
-            final_temp_path = await convert_to_pdf(file_ids, suggested_filename)
-        else:
-            final_temp_path = files[0]
-
-        target_path = f"{category}/{suggested_filename}"
-
+        final_temp_path = await _prepare_file_for_save(files, suggested_filename)
         save_result = await save_to_local_and_drive(final_temp_path, target_path)
+        await _persist_document(draft, save_result, suggested_filename)
 
-        embedding = await get_embedding(summary)
-
-        async with async_session() as session:
-            repo = DocumentRepository(session)
-            await repo.add_document(
-                saved_filename=suggested_filename,
-                local_path=save_result["local_path"] or target_path,
-                category=category,
-                owner=owner,
-                summary=summary,
-                embedding=embedding,
-                gdrive_link=save_result["gdrive_link"],
-            )
-            await session.commit()
-
-        gdrive_error = save_result.get("gdrive_error")
-        if save_result["gdrive_link"]:
-            folder_link = save_result.get("gdrive_folder_link")
-            folder_md = f" | [открыть папку]({folder_link})" if folder_link else ""
-            gdrive_text = f"☁️ Google Drive: `{target_path}`\n[открыть файл]({save_result['gdrive_link']}){folder_md}"
-        elif gdrive_error:
-            gdrive_text = f"☁️ Google Drive: ошибка загрузки — {gdrive_error}"
-        else:
-            gdrive_text = "☁️ Google Drive: не настроен"
-
-        text = f"✅ Документ успешно сохранен!\n\n{gdrive_text}"
-
+        gdrive_text = _format_gdrive_result(save_result, target_path)
         if isinstance(callback.message, types.Message):
-            await callback.message.edit_text(text, parse_mode="Markdown")
-
+            await callback.message.edit_text(f"✅ Документ успешно сохранен!\n\n{gdrive_text}", parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Ошибка при сохранении документа: {e}")
         await callback.answer("Произошла ошибка при сохранении файла.", show_alert=True)
@@ -110,78 +144,21 @@ async def handle_replace_save(callback: types.CallbackQuery, bot: Bot, state: FS
     if isinstance(callback.message, types.Message):
         await callback.message.edit_text("⏳ Заменяю документ...", reply_markup=None)
 
-    import uuid
-
-    try:
-        dup_uuid = uuid.UUID(duplicate_id)
-        async with async_session() as session:
-            repo = DocumentRepository(session)
-            old_doc = await repo.get_document(dup_uuid)
-            if old_doc:
-                try:
-                    old_local_path = Path(old_doc.local_path)
-                    if old_local_path.exists():
-                        old_local_path.unlink()
-                except Exception as e:
-                    logger.error(f"Не удалось удалить локальный файл {old_doc.local_path}: {e}")
-
-                if old_doc.gdrive_link:
-                    file_id = extract_gdrive_file_id(old_doc.gdrive_link)
-                    if file_id:
-                        await delete_file_from_drive(file_id)
-
-                await repo.delete_document(dup_uuid)
-                await session.commit()
-    except Exception as e:
-        logger.error(f"Ошибка при удалении старого документа {duplicate_id}: {e}")
+    await _delete_old_document(duplicate_id)
 
     category = draft["category"]
     suggested_filename = draft["suggested_filename"]
-    summary = draft["summary"]
-    owner = draft["owner"]
+    target_path = f"{category}/{suggested_filename}"
 
     final_temp_path = None
     try:
-        if len(files) > 1:
-            file_ids = [Path(f).name for f in files]
-            final_temp_path = await convert_to_pdf(file_ids, suggested_filename)
-        else:
-            final_temp_path = files[0]
-
-        target_path = f"{category}/{suggested_filename}"
-
+        final_temp_path = await _prepare_file_for_save(files, suggested_filename)
         save_result = await save_to_local_and_drive(final_temp_path, target_path)
+        await _persist_document(draft, save_result, suggested_filename)
 
-        embedding = await get_embedding(summary)
-
-        async with async_session() as session:
-            repo = DocumentRepository(session)
-            await repo.add_document(
-                saved_filename=suggested_filename,
-                local_path=save_result["local_path"] or target_path,
-                category=category,
-                owner=owner,
-                summary=summary,
-                embedding=embedding,
-                gdrive_link=save_result["gdrive_link"],
-            )
-            await session.commit()
-
-        gdrive_error = save_result.get("gdrive_error")
-        if save_result["gdrive_link"]:
-            folder_link = save_result.get("gdrive_folder_link")
-            folder_md = f" | [открыть папку]({folder_link})" if folder_link else ""
-            gdrive_text = f"☁️ Google Drive: `{target_path}`\n[открыть файл]({save_result['gdrive_link']}){folder_md}"
-        elif gdrive_error:
-            gdrive_text = f"☁️ Google Drive: ошибка загрузки — {gdrive_error}"
-        else:
-            gdrive_text = "☁️ Google Drive: не настроен"
-
-        text = f"✅ Документ успешно заменен!\n\n{gdrive_text}"
-
+        gdrive_text = _format_gdrive_result(save_result, target_path)
         if isinstance(callback.message, types.Message):
-            await callback.message.edit_text(text, parse_mode="Markdown")
-
+            await callback.message.edit_text(f"✅ Документ успешно заменен!\n\n{gdrive_text}", parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Ошибка при сохранении нового документа взамен старого: {e}")
         await callback.answer("Произошла ошибка при сохранении нового файла.", show_alert=True)

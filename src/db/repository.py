@@ -142,3 +142,17 @@ class DocumentRepository:
         )
         result = await self.session.execute(stmt)
         return [(str(row[0]), int(row[1])) for row in result.all()]
+
+    async def get_by_gdrive_link(self, gdrive_link: str) -> "Document | None":
+        """Возвращает документ по ссылке Google Drive."""
+        from src.db.models import Document as Doc
+
+        stmt = select(Doc).where(Doc.gdrive_link == gdrive_link)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_all_gdrive_links(self) -> set[str]:
+        """Возвращает множество всех сохранённых ссылок Google Drive."""
+        stmt = select(Document.gdrive_link).where(Document.gdrive_link.isnot(None))
+        result = await self.session.execute(stmt)
+        return {str(row[0]) for row in result.all() if row[0]}

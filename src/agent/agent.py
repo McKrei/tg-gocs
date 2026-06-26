@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
-from src.agent.tools import TOOLS_MAP, TOOLS_SCHEMA
+from src.agent.tools import CLASSIFY_TOOLS_MAP, CLASSIFY_TOOLS_SCHEMA, TOOLS_MAP, TOOLS_SCHEMA
 from src.config import settings
 from src.llm.client import get_llm_client
 from src.utils.logger import get_logger
@@ -116,8 +116,10 @@ def normalize_draft_metadata(draft: dict[str, Any], file_ext: str, today: str | 
 
 
 @with_retry(attempts=3, initial_delay=1.0)
-async def classify_document(temp_filepath: str) -> dict[str, Any]:
-    """Проводит мультимодальный анализ документа, при необходимости используя инструменты."""
+async def classify_document(temp_filepath: str, classify_only: bool = False) -> dict[str, Any]:
+    """Проводит мультимодальный анализ документа. При classify_only=True использует только read-only инструменты."""
+    active_tools_map = CLASSIFY_TOOLS_MAP if classify_only else TOOLS_MAP
+    active_tools_schema = CLASSIFY_TOOLS_SCHEMA if classify_only else TOOLS_SCHEMA
     file_path = Path(temp_filepath)
     suffix = file_path.suffix.lower()
     base64_data = encode_file(temp_filepath)
@@ -183,7 +185,7 @@ async def classify_document(temp_filepath: str) -> dict[str, Any]:
         response = await client.chat.completions.create(
             model=settings.llm.model_name,
             messages=cast(Any, messages),
-            tools=cast(Any, TOOLS_SCHEMA),
+            tools=cast(Any, active_tools_schema),
             tool_choice="auto",
         )
 
@@ -200,9 +202,9 @@ async def classify_document(temp_filepath: str) -> dict[str, Any]:
                 func_args = json.loads(cast(Any, tool_call).function.arguments)
 
                 logger.info(f"Запуск инструмента {func_name} с аргументами {func_args}...")
-                if func_name in TOOLS_MAP:
+                if func_name in active_tools_map:
                     try:
-                        tool_result = await TOOLS_MAP[func_name](**func_args)
+                        tool_result = await active_tools_map[func_name](**func_args)
                     except Exception as e:
                         logger.error(f"Ошибка при вызове {func_name}: {e}")
                         tool_result = {"error": str(e)}

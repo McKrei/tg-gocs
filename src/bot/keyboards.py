@@ -25,3 +25,30 @@ def get_duplicate_confirmation_keyboard(multi_file: bool = False) -> InlineKeybo
         InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_save"),
     )
     return builder.as_markup()
+
+
+def get_inbox_confirmation_keyboard() -> InlineKeyboardMarkup:
+    """Возвращает клавиатуру для подтверждения сохранения inbox-файла."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Сохранить", callback_data="inbox_save"),
+        InlineKeyboardButton(text="⏭️ Пропустить", callback_data="inbox_skip"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🛑 Остановить", callback_data="inbox_stop"),
+    )
+    return builder.as_markup()
+
+
+def get_inbox_duplicate_keyboard() -> InlineKeyboardMarkup:
+    """Возвращает клавиатуру для inbox-файла при обнаружении дубликата."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📝 Сохранить как новый", callback_data="inbox_save"),
+        InlineKeyboardButton(text="🔄 Заменить", callback_data="inbox_replace"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="⏭️ Пропустить", callback_data="inbox_skip"),
+        InlineKeyboardButton(text="🛑 Остановить", callback_data="inbox_stop"),
+    )
+    return builder.as_markup()

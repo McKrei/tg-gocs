@@ -7,3 +7,10 @@ class DocumentProcessingStates(StatesGroup):
     waiting_file = State()
     confirming = State()
     waiting_query = State()
+
+
+class InboxStates(StatesGroup):
+    """Состояния обработки файлов из inbox-папки."""
+
+    processing = State()
+    confirming = State()
