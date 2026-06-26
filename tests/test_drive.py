@@ -4,9 +4,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from googleapiclient.errors import HttpError
+from httplib2 import Response
 
 from src.drive.client import is_drive_configured
-from src.drive.uploader import upload_file
+from src.drive.uploader import upload_file, upload_file_with_status
 
 
 @pytest.mark.asyncio
@@ -52,6 +54,43 @@ async def test_upload_file_mocked(tmp_path: Path) -> None:
         assert mock_files.list.call_count == 2
         # Проверяем, что создание папок и загрузка файла были выполнены (2 папки + 1 файл = 3 вызова)
         assert mock_files.create.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_upload_file_with_status_returns_error(tmp_path: Path) -> None:
+    """Проверяет возврат причины ошибки Google Drive."""
+    temp_file = tmp_path / "doc.pdf"
+    temp_file.write_text("test content")
+
+    with (
+        patch("src.drive.uploader.is_drive_configured", return_value=True),
+        patch("src.drive.uploader._upload_file_with_retry", side_effect=RuntimeError("storageQuotaExceeded")),
+    ):
+        result = await upload_file_with_status(str(temp_file), "Личное/doc.pdf")
+
+    assert result["link"] is None
+    assert result["error"] == "storageQuotaExceeded"
+
+
+@pytest.mark.asyncio
+async def test_upload_file_with_status_does_not_retry_permanent_quota_error(tmp_path: Path) -> None:
+    """Проверяет отсутствие повторов для постоянной ошибки квоты Service Account."""
+    temp_file = tmp_path / "doc.pdf"
+    temp_file.write_text("test content")
+    error = HttpError(
+        Response({"status": "403", "reason": "Forbidden"}),
+        b'{"error": {"errors": [{"reason": "storageQuotaExceeded"}], "code": 403}}',
+    )
+
+    with (
+        patch("src.drive.uploader.is_drive_configured", return_value=True),
+        patch("src.drive.uploader._upload_file_sync", side_effect=error) as mock_upload,
+    ):
+        result = await upload_file_with_status(str(temp_file), "Личное/doc.pdf")
+
+    assert result["link"] is None
+    assert result["error"] == "storageQuotaExceeded"
+    mock_upload.assert_called_once()
 
 
 @pytest.mark.skipif(not is_drive_configured(), reason="Интеграция с Google Drive не настроена.")

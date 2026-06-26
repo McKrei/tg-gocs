@@ -1,17 +1,56 @@
 """Модуль для асинхронной загрузки файлов в Google Drive с сохранением структуры папок."""
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 from src.config import settings
 from src.drive.client import get_drive_service, is_drive_configured
 from src.utils.logger import get_logger
-from src.utils.retry import with_retry
 
 logger = get_logger(__name__)
+
+NON_RETRYABLE_REASONS = {
+    "storageQuotaExceeded",
+    "insufficientFilePermissions",
+    "notFound",
+}
+
+
+def _extract_http_error_reason(error: HttpError) -> str:
+    try:
+        details = error.error_details
+        if details:
+            return str(details[0].get("reason") or details[0].get("message") or "")
+    except Exception:
+        pass
+
+    try:
+        payload = json.loads(error.content.decode("utf-8"))
+        errors = payload.get("error", {}).get("errors", [])
+        if errors:
+            return str(errors[0].get("reason") or errors[0].get("message") or "")
+        return str(payload.get("error", {}).get("message") or "")
+    except Exception:
+        return ""
+
+
+def _format_upload_error(error: Exception) -> str:
+    """Формирует короткое описание ошибки Google Drive."""
+    if isinstance(error, HttpError):
+        reason = _extract_http_error_reason(error)
+        return reason or str(error)
+    return str(error)
+
+
+def _is_non_retryable_upload_error(error: Exception) -> bool:
+    if not isinstance(error, HttpError):
+        return False
+    return _extract_http_error_reason(error) in NON_RETRYABLE_REASONS
 
 
 def _find_or_create_folder_sync(service: Any, folder_name: str, parent_id: str) -> str:
@@ -22,7 +61,11 @@ def _find_or_create_folder_sync(service: Any, folder_name: str, parent_id: str) 
         f"and mimeType = 'application/vnd.google-apps.folder' "
         f"and trashed = false"
     )
-    results = service.files().list(q=query, fields="files(id, name)").execute()
+    results = (
+        service.files()
+        .list(q=query, fields="files(id, name)", supportsAllDrives=True, includeItemsFromAllDrives=True)
+        .execute()
+    )
     files = results.get("files", [])
 
     if files:
@@ -34,7 +77,7 @@ def _find_or_create_folder_sync(service: Any, folder_name: str, parent_id: str) 
         "mimeType": "application/vnd.google-apps.folder",
         "parents": [parent_id],
     }
-    folder = service.files().create(body=file_metadata, fields="id").execute()
+    folder = service.files().create(body=file_metadata, fields="id", supportsAllDrives=True).execute()
     return str(folder["id"])
 
 
@@ -57,28 +100,55 @@ def _upload_file_sync(local_filepath: str, target_path: str) -> str:
     file_metadata = {"name": file_name, "parents": [parent_id]}
     media = MediaFileUpload(str(local_path), resumable=True)
 
-    uploaded_file = service.files().create(body=file_metadata, media_body=media, fields="id, webViewLink").execute()
+    uploaded_file = (
+        service.files()
+        .create(body=file_metadata, media_body=media, fields="id, webViewLink", supportsAllDrives=True)
+        .execute()
+    )
 
     return str(uploaded_file["webViewLink"])
 
 
-@with_retry(attempts=3, initial_delay=1.0)
 async def _upload_file_with_retry(local_filepath: str, target_path: str) -> str:
     """Выполняет выгрузку файла с повторными попытками."""
-    result: str = await asyncio.to_thread(_upload_file_sync, local_filepath, target_path)
-    return result
+    attempts = 3
+    delay = 1.0
+    for attempt in range(1, attempts + 1):
+        try:
+            result: str = await asyncio.to_thread(_upload_file_sync, local_filepath, target_path)
+            return result
+        except Exception as e:
+            if _is_non_retryable_upload_error(e):
+                raise
+            if attempt == attempts:
+                logger.error(f"Все попытки ({attempts}) выгрузки файла на Google Drive провалились: {e}")
+                raise
+            logger.warning(
+                f"Попытка {attempt}/{attempts} выгрузки файла на Google Drive завершилась ошибкой: {e}. "
+                f"Повтор через {delay:.2f} сек..."
+            )
+            await asyncio.sleep(delay)
+            delay *= 2
+    raise RuntimeError("Выгрузка файла на Google Drive завершилась без результата.")
 
 
 async def upload_file(local_filepath: str, target_path: str) -> str | None:
     """Запускает загрузку файла на Google Drive в отдельном потоке с повторными попытками."""
+    result = await upload_file_with_status(local_filepath, target_path)
+    return result["link"]
+
+
+async def upload_file_with_status(local_filepath: str, target_path: str) -> dict[str, str | None]:
+    """Загружает файл на Google Drive и возвращает ссылку или причину ошибки."""
     if not is_drive_configured():
         logger.warning(f"Интеграция с Google Drive отключена. Файл {local_filepath} сохранен только локально.")
-        return None
+        return {"link": None, "error": "Google Drive не настроен"}
 
     try:
         link: str = await _upload_file_with_retry(local_filepath, target_path)
         logger.info(f"Файл {local_filepath} успешно выгружен на Google Drive: {link}")
-        return link
+        return {"link": link, "error": None}
     except Exception as e:
-        logger.error(f"Ошибка после всех попыток выгрузки файла {local_filepath} на Google Drive: {e}")
-        return None
+        error = _format_upload_error(e)
+        logger.error(f"Ошибка после всех попыток выгрузки файла {local_filepath} на Google Drive: {error}")
+        return {"link": None, "error": error}

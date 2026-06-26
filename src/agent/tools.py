@@ -9,7 +9,7 @@ from PIL import Image
 from src.config import settings
 from src.db.engine import async_session
 from src.db.repository import DocumentRepository
-from src.drive.uploader import upload_file
+from src.drive.uploader import upload_file_with_status
 from src.llm.embeddings import get_embedding
 
 
@@ -76,10 +76,13 @@ async def save_to_local_and_drive(temp_filepath: str, target_path: str) -> dict[
 
     shutil.copy2(temp_path, dest_path)
 
-    # Выгружаем на Google Drive (вернет ссылку или None, если интеграция отключена)
-    gdrive_link = await upload_file(str(dest_path), target_path)
+    upload_result = await upload_file_with_status(str(dest_path), target_path)
 
-    return {"local_path": str(dest_path), "gdrive_link": gdrive_link}
+    return {
+        "local_path": str(dest_path),
+        "gdrive_link": upload_result["link"],
+        "gdrive_error": upload_result["error"],
+    }
 
 
 async def vector_search(query: str, limit: int = 5) -> list[dict[str, Any]]:

@@ -1,3 +1,4 @@
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -57,7 +58,8 @@ async def test_flow_save_end_to_end() -> None:
         state.set_state.assert_called_once_with(DocumentProcessingStates.confirming)
         assert len(fsm_data["files"]) == 1
         assert fsm_data["files"][0].endswith("photo_1.jpg")
-        assert fsm_data["draft"] == mock_draft
+        assert fsm_data["draft"]["category"] == mock_draft["category"]
+        assert fsm_data["draft"]["suggested_filename"] == f"{date.today().isoformat()} polis.jpg"
         assert fsm_data["msg_id"] == 456
 
     # 2. Симулируем получение второго фото (пакетный режим)
@@ -130,7 +132,9 @@ async def test_flow_save_end_to_end() -> None:
             mock_repo.add_document.assert_called_once()
             mock_session.commit.assert_called_once()
             state.clear.assert_called_once()
-            callback.message.edit_text.assert_called_once()
+            assert callback.message.edit_text.call_args_list[0].args[0] == "⏳ Сохраняю документ..."
+            assert callback.message.edit_text.call_args_list[0].kwargs["reply_markup"] is None
+            assert "Документ успешно сохранен" in callback.message.edit_text.call_args_list[-1].args[0]
             assert mock_cleanup.call_count > 0
 
 

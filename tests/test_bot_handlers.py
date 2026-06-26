@@ -2,9 +2,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.bot.handlers.commands import cmd_cancel, cmd_help, cmd_list, cmd_start, cmd_stats
-from src.bot.handlers.files import handle_document, handle_photo
+from src.bot.handlers.commands import cmd_add, cmd_cancel, cmd_help, cmd_list, cmd_search, cmd_start, cmd_stats
+from src.bot.handlers.files import handle_document, handle_file_without_add, handle_photo
+from src.bot.handlers.text import handle_text_while_waiting_file
 from src.bot.middleware.auth import AuthMiddleware
+from src.bot.states import DocumentProcessingStates
 from src.config import settings
 
 
@@ -13,9 +15,52 @@ async def test_cmd_start() -> None:
     """Проверяет отправку стартового сообщения."""
     message = AsyncMock()
     await cmd_start(message)
-    message.answer.assert_called_once_with(
-        "Привет! Я бот для управления семейными документами.\nОтправь мне файл (изображение или PDF) для классификации."
-    )
+    message.answer.assert_called_once()
+    assert "/add" in message.answer.call_args.args[0]
+    assert "/search" in message.answer.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_cmd_add_sets_waiting_file() -> None:
+    """Проверяет переход в режим ожидания файла."""
+    message = AsyncMock()
+    state = AsyncMock()
+
+    await cmd_add(message, state)
+
+    state.clear.assert_called_once()
+    state.set_state.assert_called_once_with(DocumentProcessingStates.waiting_file)
+    message.answer.assert_called_once()
+    assert "Отправьте фото" in message.answer.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_cmd_search_with_query_runs_search() -> None:
+    """Проверяет поиск с запросом в команде."""
+    message = AsyncMock()
+    message.text = "/search паспорт"
+    state = AsyncMock()
+
+    with patch("src.bot.handlers.search._do_search", AsyncMock()) as mock_search:
+        await cmd_search(message, state)
+
+    state.clear.assert_called_once()
+    mock_search.assert_awaited_once_with("паспорт", message)
+    state.set_state.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cmd_search_without_query_sets_waiting_query() -> None:
+    """Проверяет переход в режим ожидания поискового запроса."""
+    message = AsyncMock()
+    message.text = "/search"
+    state = AsyncMock()
+
+    await cmd_search(message, state)
+
+    state.clear.assert_called_once()
+    state.set_state.assert_called_once_with(DocumentProcessingStates.waiting_query)
+    message.answer.assert_called_once_with("🔍 Что ищем? Напишите запрос:")
 
 
 @pytest.mark.asyncio
@@ -25,7 +70,7 @@ async def test_cmd_cancel() -> None:
     state = AsyncMock()
     await cmd_cancel(message, state)
     state.clear.assert_called_once()
-    message.answer.assert_called_once_with("Действие отменено.")
+    message.answer.assert_called_once_with("✅ Действие отменено.")
 
 
 @pytest.mark.asyncio
@@ -78,6 +123,7 @@ async def test_handle_photo() -> None:
         mock_settings.storage.temp_dir = "data/temp_test"
         mock_settings.storage.max_file_size_mb = 50
         mock_settings.storage.rate_limit_per_minute = 10
+        mock_settings.storage.session_ttl_seconds = 1800
         await handle_photo(message, bot, state)
 
         bot.get_file.assert_called_once_with("photo123")
@@ -102,10 +148,32 @@ async def test_handle_document() -> None:
         mock_settings.storage.temp_dir = "data/temp_test"
         mock_settings.storage.max_file_size_mb = 50
         mock_settings.storage.rate_limit_per_minute = 10
+        mock_settings.storage.session_ttl_seconds = 1800
         await handle_document(message, bot, state)
 
         bot.download.assert_called_once()
         message.answer.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_file_without_add() -> None:
+    """Проверяет подсказку при отправке файла без /add."""
+    message = AsyncMock()
+
+    await handle_file_without_add(message)
+
+    message.answer.assert_called_once_with("📎 Чтобы добавить документ, используйте команду /add")
+
+
+@pytest.mark.asyncio
+async def test_handle_text_while_waiting_file() -> None:
+    """Проверяет подсказку при тексте вместо файла после /add."""
+    message = AsyncMock()
+    message.text = "паспорт"
+
+    await handle_text_while_waiting_file(message)
+
+    message.answer.assert_called_once_with("Ожидаю фото или файл документа. Для отмены используйте /cancel.")
 
 
 @pytest.mark.asyncio

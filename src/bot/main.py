@@ -6,6 +6,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from src.bot.handlers import callbacks, commands, files, search, text
 from src.bot.middleware.auth import AuthMiddleware
 from src.config import settings
+from src.db.engine import init_db
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -25,6 +26,7 @@ async def main() -> None:
     dp.include_router(search.router)
     dp.include_router(files.router)
 
+    await init_db()
     logger.info("Запуск Telegram-бота...")
     await dp.start_polling(bot)
 

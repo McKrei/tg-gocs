@@ -3,6 +3,7 @@
 import base64
 import json
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
@@ -13,6 +14,32 @@ from src.utils.logger import get_logger
 from src.utils.retry import with_retry
 
 logger = get_logger(__name__)
+
+DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\s+")
+DATE_PATTERNS = [
+    re.compile(r"\b(?P<year>20\d{2}|19\d{2})[-.](?P<month>\d{1,2})[-.](?P<day>\d{1,2})\b"),
+    re.compile(r"\b(?P<day>\d{1,2})[./-](?P<month>\d{1,2})[./-](?P<year>20\d{2}|19\d{2})\b"),
+]
+MONTHS_RU = {
+    "января": 1,
+    "февраля": 2,
+    "марта": 3,
+    "апреля": 4,
+    "мая": 5,
+    "июня": 6,
+    "июля": 7,
+    "августа": 8,
+    "сентября": 9,
+    "октября": 10,
+    "ноября": 11,
+    "декабря": 12,
+}
+MONTH_DATE_RE = re.compile(
+    r"\b(?P<day>\d{1,2})\s+"
+    r"(?P<month>января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)"
+    r"\s+(?P<year>20\d{2}|19\d{2})\b",
+    re.IGNORECASE,
+)
 
 
 def encode_image(image_path: str) -> str:
@@ -43,6 +70,51 @@ def parse_json_content(content: str) -> dict[str, Any]:
         raise ValueError(f"Ответ модели не содержит валидного JSON: {content}") from e
 
 
+def _build_date(year: str, month: str | int, day: str) -> str | None:
+    try:
+        return date(int(year), int(month), int(day)).isoformat()
+    except ValueError:
+        return None
+
+
+def _extract_document_date(text: str) -> str | None:
+    for pattern in DATE_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            result = _build_date(match["year"], match["month"], match["day"])
+            if result:
+                return result
+
+    month_match = MONTH_DATE_RE.search(text)
+    if month_match:
+        month = MONTHS_RU[month_match["month"].lower()]
+        return _build_date(month_match["year"], month, month_match["day"])
+
+    return None
+
+
+def normalize_draft_metadata(draft: dict[str, Any], file_ext: str, today: str | None = None) -> dict[str, Any]:
+    """Нормализует имя файла черновика по правилам проекта."""
+    normalized = dict(draft)
+    fallback_date = today or date.today().isoformat()
+    suggested_name = str(normalized.get("suggested_filename") or "Документ")
+    ext = file_ext or Path(suggested_name).suffix or ".pdf"
+    stem = Path(suggested_name).stem.strip() or "Документ"
+    stem = DATE_PREFIX_RE.sub("", stem).strip()
+    stem = re.sub(r"[\\/]+", " ", stem)
+    stem = re.sub(r"\s+", " ", stem).strip() or "Документ"
+
+    date_source = " ".join(
+        [
+            suggested_name,
+            str(normalized.get("summary") or ""),
+        ]
+    )
+    document_date = _extract_document_date(date_source) or fallback_date
+    normalized["suggested_filename"] = f"{document_date} {stem}{ext}"
+    return normalized
+
+
 @with_retry(attempts=3, initial_delay=1.0)
 async def classify_document(temp_filepath: str) -> dict[str, Any]:
     """Проводит мультимодальный анализ документа, при необходимости используя инструменты."""
@@ -56,10 +128,18 @@ async def classify_document(temp_filepath: str) -> dict[str, Any]:
                 "Ты — умный агент для классификации семейных документов. "
                 "Твоя задача — проанализировать изображение документа, при необходимости посмотреть "
                 "существующее дерево категорий с помощью get_directory_tree, и выдать метаданные. "
+                "Извлеки максимум полезных реквизитов из документа: серию, номер, дату выдачи или регистрации, "
+                "номер актовой записи, орган выдачи, ФИО, даты рождения, адреса, сроки действия, суммы, "
+                "идентификаторы и любые другие поля, по которым пользователь может потом искать документ. "
+                "Поле summary должно быть подробным, но без выдумок: перечисли только то, что реально видно. "
+                "Имя файла пиши на русском языке. Оно должно начинаться с даты в формате YYYY-MM-DD: "
+                "если в документе есть дата документа, регистрации или выдачи — используй её; "
+                "если даты нет — используй сегодняшнюю дату. После даты добавь короткое понятное название. "
                 "Ты ДОЛЖЕН вернуть результат строго в формате JSON-объекта со следующими ключами:\n"
                 "- category: строка, относительный путь (например, 'Медицина/Жена')\n"
-                "- suggested_filename: строка, имя файла с расширением (например, 'Polis.pdf')\n"
-                "- summary: строка, краткое описание содержания документа\n"
+                "- suggested_filename: строка, имя файла с расширением "
+                "(например, '2017-07-07 Свидетельство о браке.jpg')\n"
+                "- summary: строка, подробное описание содержания и всех найденных реквизитов\n"
                 "- owner: строка, владелец документа (например, 'Жена', 'Муж', 'Сын', 'Общее')\n"
                 "Отвечай строго в формате JSON, без лишнего текста вокруг."
             ),

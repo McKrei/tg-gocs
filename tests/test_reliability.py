@@ -78,7 +78,8 @@ async def test_drive_unavailable_fallback() -> None:
 
     save_result = {
         "local_path": "data/documents/Медицина/polis.jpg",
-        "gdrive_link": None,  # Drive недоступен
+        "gdrive_link": None,
+        "gdrive_error": "Ошибка Google Drive: storageQuotaExceeded",
     }
 
     with (
@@ -102,5 +103,54 @@ async def test_drive_unavailable_fallback() -> None:
             _, kwargs = mock_repo.add_document.call_args
             assert kwargs["gdrive_link"] is None
 
-            callback.message.edit_text.assert_called_once()
-            assert "Google Drive: Не настроен" in callback.message.edit_text.call_args[0][0]
+            final_text = callback.message.edit_text.call_args_list[-1].args[0]
+            assert "Google Drive: ошибка загрузки" in final_text
+            assert "storageQuotaExceeded" in final_text
+
+
+@pytest.mark.asyncio
+async def test_confirm_save_removes_buttons_before_long_operations() -> None:
+    """Проверяет, что кнопки исчезают сразу после подтверждения."""
+    callback = AsyncMock()
+    callback.message = AsyncMock(spec=types.Message)
+    callback.message.edit_text = AsyncMock()
+    state = AsyncMock(spec=FSMContext)
+    bot = AsyncMock()
+
+    state.get_data = AsyncMock(
+        return_value={
+            "files": ["file1.jpg"],
+            "draft": {
+                "category": "Медицина",
+                "suggested_filename": "polis.jpg",
+                "summary": "Медицинский полис",
+                "owner": "Муж",
+            },
+        }
+    )
+
+    save_result = {
+        "local_path": "data/documents/Медицина/polis.jpg",
+        "gdrive_link": "https://drive.google.com/file",
+        "gdrive_error": None,
+    }
+
+    with (
+        patch("src.bot.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
+        patch("src.bot.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
+        patch("src.bot.handlers.callbacks.async_session") as mock_session_maker,
+        patch("src.bot.handlers.callbacks._cleanup_files"),
+    ):
+        mock_session = AsyncMock()
+        mock_session_maker.return_value.__aenter__.return_value = mock_session
+
+        with patch("src.bot.handlers.callbacks.DocumentRepository") as mock_repo_class:
+            mock_repo = MagicMock()
+            mock_repo.add_document = AsyncMock()
+            mock_repo_class.return_value = mock_repo
+
+            await handle_confirm_save(callback, bot, state)
+
+    first_call = callback.message.edit_text.call_args_list[0]
+    assert first_call.args[0] == "⏳ Сохраняю документ..."
+    assert first_call.kwargs["reply_markup"] is None

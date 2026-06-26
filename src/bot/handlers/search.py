@@ -1,11 +1,14 @@
 import json
+from pathlib import Path
 from typing import Any
 
 from aiogram import Bot, Router, types
 from aiogram.filters import StateFilter
+from aiogram.fsm.context import FSMContext
 
 from src.agent.agent import parse_json_content
 from src.agent.tools import vector_search
+from src.bot.states import DocumentProcessingStates
 from src.config import settings
 from src.llm.client import get_llm_client
 from src.utils.logger import get_logger
@@ -16,13 +19,12 @@ logger = get_logger(__name__)
 
 
 @with_retry(attempts=3, initial_delay=1.0)
-async def rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict[str, Any]:
+async def _rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict[str, Any]:
     """Выполняет повторное ранжирование документов с помощью LLM."""
     if not documents:
         return {"best_match_id": None, "explanation": "Документы не найдены."}
 
     client = get_llm_client()
-
     docs_subset = [
         {
             "id": doc["id"],
@@ -39,13 +41,11 @@ async def rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict[
         "Тебе предоставлен поисковый запрос пользователя и список документов, найденных по векторному сходству.\n"
         "Твоя задача:\n"
         "1. Определить, какой из найденных документов наиболее точно соответствует запросу пользователя.\n"
-        "2. Если ни один документ не подходит под запрос, или если запрос не является поисковым "
-        "(например, это приветствие или вопрос о жизни), верни null в поле 'best_match_id'.\n"
-        "3. Сформулировать краткое пояснение или вежливый ответ для пользователя.\n\n"
-        "Результат ты должен вернуть СТРОГО в формате JSON-объекта со следующими ключами:\n"
-        "- best_match_id: строка (UUID документа) или null\n"
-        "- explanation: строка (краткое описание найденного документа и почему он подходит, "
-        "либо вежливый отказ/уточнение, если ничего не найдено)\n\n"
+        "2. Если ни один документ не подходит, верни null в поле 'best_match_id'.\n"
+        "3. Сформулировать краткое пояснение для пользователя.\n\n"
+        "Результат — СТРОГО JSON со следующими ключами:\n"
+        "- best_match_id: строка (UUID) или null\n"
+        "- explanation: строка\n\n"
         f"Список документов:\n{json.dumps(docs_subset, ensure_ascii=False)}\n\n"
         f'Запрос пользователя:\n"{query}"\n'
     )
@@ -63,18 +63,14 @@ async def rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict[
         return {"best_match_id": None, "explanation": "Произошла ошибка при обработке запроса."}
 
 
-@router.message(StateFilter(None))
-async def handle_search(message: types.Message, bot: Bot) -> None:
-    """Обрабатывает текстовые запросы для поиска документов."""
-    if not message.text or message.text.startswith("/"):
-        return
-
-    query = message.text
+async def _do_search(query: str, message: types.Message) -> None:
+    """Выполняет векторный поиск и отправляет результат пользователю."""
+    bot: Bot = message.bot  # type: ignore[assignment]
     await bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
     try:
         search_results = await vector_search(query, limit=5)
-        rerank_result = await rerank_documents(query, search_results)
+        rerank_result = await _rerank_documents(query, search_results)
 
         best_match_id = rerank_result.get("best_match_id")
         explanation = rerank_result.get("explanation", "")
@@ -102,8 +98,6 @@ async def handle_search(message: types.Message, bot: Bot) -> None:
         if gdrive_link:
             caption += f"\n☁️ [Открыть в Google Drive]({gdrive_link})"
 
-        from pathlib import Path
-
         doc_path = Path(local_path)
         if doc_path.exists():
             file_input = types.FSInputFile(str(doc_path), filename=filename)
@@ -118,3 +112,14 @@ async def handle_search(message: types.Message, bot: Bot) -> None:
     except Exception as e:
         logger.error(f"Ошибка при поиске документов: {e}")
         await message.answer("Произошла ошибка при поиске. Пожалуйста, попробуйте позже.")
+
+
+@router.message(StateFilter(DocumentProcessingStates.waiting_query))
+async def handle_search_query(message: types.Message, state: FSMContext) -> None:
+    """Обрабатывает текстовый запрос в режиме поиска."""
+    if not message.text or message.text.startswith("/"):
+        await message.answer("Пожалуйста, напишите текстовый запрос для поиска.")
+        return
+
+    await state.clear()
+    await _do_search(message.text, message)

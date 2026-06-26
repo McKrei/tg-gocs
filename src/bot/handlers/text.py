@@ -1,7 +1,8 @@
 import contextlib
 import time
 
-from aiogram import Bot, Router, types
+from aiogram import Bot, F, Router, types
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 
 from src.bot.handlers.files import format_draft_message
@@ -12,6 +13,14 @@ from src.utils.logger import get_logger
 
 router = Router()
 logger = get_logger(__name__)
+
+
+@router.message(StateFilter(DocumentProcessingStates.waiting_file), F.text)
+async def handle_text_while_waiting_file(message: types.Message) -> None:
+    """Подсказывает отправить файл после команды /add."""
+    if message.text and message.text.startswith("/"):
+        return
+    await message.answer("Ожидаю фото или файл документа. Для отмены используйте /cancel.")
 
 
 @router.message(DocumentProcessingStates.confirming)

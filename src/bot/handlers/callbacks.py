@@ -27,6 +27,8 @@ async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FS
         return
 
     await callback.answer("Сохраняю документ...")
+    if isinstance(callback.message, types.Message):
+        await callback.message.edit_text("⏳ Сохраняю документ...", reply_markup=None)
 
     category = draft["category"]
     suggested_filename = draft["suggested_filename"]
@@ -65,11 +67,13 @@ async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FS
             )
             await session.commit()
 
-        gdrive_text = (
-            f"☁️ Google Drive: [открыть файл]({save_result['gdrive_link']})"
-            if save_result["gdrive_link"]
-            else "☁️ Google Drive: Не настроен"
-        )
+        gdrive_error = save_result.get("gdrive_error")
+        if save_result["gdrive_link"]:
+            gdrive_text = f"☁️ Google Drive: [открыть файл]({save_result['gdrive_link']})"
+        elif gdrive_error:
+            gdrive_text = f"☁️ Google Drive: ошибка загрузки — {gdrive_error}"
+        else:
+            gdrive_text = "☁️ Google Drive: не настроен"
 
         text = f"✅ Документ успешно сохранен!\n\n📁 Локально: `{save_result['local_path']}`\n{gdrive_text}"
 

@@ -13,7 +13,7 @@ from PIL import Image
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.agent.agent import classify_document
+from src.agent.agent import classify_document, normalize_draft_metadata
 from src.agent.tools import (
     convert_to_pdf,
     create_directory,
@@ -236,3 +236,31 @@ async def test_classify_document_orchestrator(tmp_path: Path, monkeypatch: pytes
             assert result["suggested_filename"] == "Polis.pdf"
             assert result["owner"] == "Жена"
             assert mock_client.chat.completions.create.call_count == 2
+
+
+def test_normalize_draft_metadata_uses_document_date_from_summary() -> None:
+    """Проверяет добавление даты документа в имя файла."""
+    draft = {
+        "category": "Личные документы/Общие",
+        "suggested_filename": "Свидетельство о заключении брака Сергуньины.jpg",
+        "summary": "Брак зарегистрирован 07.07.2017. Актовая запись № 306. Серия I-ГР № 733248.",
+        "owner": "Общее",
+    }
+
+    result = normalize_draft_metadata(draft, ".jpg", today="2026-06-26")
+
+    assert result["suggested_filename"] == "2017-07-07 Свидетельство о заключении брака Сергуньины.jpg"
+
+
+def test_normalize_draft_metadata_uses_today_when_document_date_missing() -> None:
+    """Проверяет добавление текущей даты, если дата документа не найдена."""
+    draft = {
+        "category": "Личные документы/Общие",
+        "suggested_filename": "Документ.jpg",
+        "summary": "Документ без явной даты.",
+        "owner": "Общее",
+    }
+
+    result = normalize_draft_metadata(draft, ".jpg", today="2026-06-26")
+
+    assert result["suggested_filename"] == "2026-06-26 Документ.jpg"

@@ -68,6 +68,7 @@ class StorageConfig(BaseSettings):
     gdrive_root_folder_id: str = Field(..., alias="GDRIVE_ROOT_FOLDER_ID")
     max_file_size_mb: int = Field(50, alias="MAX_FILE_SIZE_MB")
     rate_limit_per_minute: int = Field(10, alias="RATE_LIMIT_PER_MINUTE")
+    session_ttl_seconds: int = Field(1800, alias="SESSION_TTL_SECONDS")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

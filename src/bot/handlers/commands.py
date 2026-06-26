@@ -3,6 +3,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import func, select
 
+from src.bot.states import DocumentProcessingStates
 from src.db.engine import async_session
 from src.db.models import Document
 from src.db.repository import DocumentRepository
@@ -12,43 +13,70 @@ router = Router()
 
 @router.message(CommandStart())
 async def cmd_start(message: types.Message) -> None:
-    """Приветственное сообщение для команды /start."""
     await message.answer(
-        "Привет! Я бот для управления семейными документами.\nОтправь мне файл (изображение или PDF) для классификации."
+        "👋 Привет! Я бот для управления семейными документами.\n\n"
+        "📎 /add — добавить документ\n"
+        "🔍 /search — найти документ\n"
+        "📋 /list — последние 10 документов\n"
+        "📊 /stats — статистика по категориям\n"
+        "❓ /help — справка"
     )
+
+
+@router.message(Command("add"))
+async def cmd_add(message: types.Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(DocumentProcessingStates.waiting_file)
+    await message.answer(
+        "📎 Отправьте фото или файл документа.\n\n"
+        "Можно прислать несколько фото — они будут склеены в один PDF.\n"
+        "Для отмены — /cancel"
+    )
+
+
+@router.message(Command("search"))
+async def cmd_search(message: types.Message, state: FSMContext) -> None:
+    from src.bot.handlers.search import _do_search
+
+    parts = message.text.split(maxsplit=1) if message.text else []
+    query = parts[1].strip() if len(parts) > 1 else ""
+    if query:
+        await state.clear()
+        await _do_search(query, message)
+    else:
+        await state.clear()
+        await state.set_state(DocumentProcessingStates.waiting_query)
+        await message.answer("🔍 Что ищем? Напишите запрос:")
 
 
 @router.message(Command("cancel"))
 @router.message(Command("reset"))
 async def cmd_cancel(message: types.Message, state: FSMContext) -> None:
-    """Сбрасывает текущее состояние FSM."""
     await state.clear()
-    await message.answer("Действие отменено.")
+    await message.answer("✅ Действие отменено.")
 
 
 @router.message(Command("help"))
 async def cmd_help(message: types.Message) -> None:
-    """Отображает справку по использованию бота."""
     help_text = (
         "🤖 *Справка по командам бота:*\n\n"
-        "📁 *Сохранение документов:*\n"
-        "Просто отправьте мне одну или несколько фотографий/PDF-файлов. "
-        "Я проанализирую их, предложу категорию, имя и описание, а затем сохраню.\n\n"
-        "🔍 *Поиск документов:*\n"
-        'Напишите мне обычным текстом, что вы ищете (например: "найди паспорт мужа").\n\n'
-        "📋 *Команды управления:*\n"
-        "/start — Начать работу с ботом\n"
-        "/help — Показать эту справку\n"
-        "/cancel, /reset — Отменить текущую сессию добавления файлов\n"
-        "/list — Показать список последних 10 документов\n"
-        "/stats — Показать статистику по категориям"
+        "📎 *Добавление документа:*\n"
+        "Введите /add — бот перейдёт в режим ожидания файла.\n"
+        "Отправьте одно или несколько фото/PDF. Бот проанализирует документ, "
+        "предложит категорию, имя и описание. Можно уточнить текстом.\n\n"
+        "🔍 *Поиск документа:*\n"
+        "/search — бот попросит написать запрос.\n"
+        "/search паспорт мужа — поиск сразу с запросом.\n\n"
+        "📋 *Управление:*\n"
+        "/list — список последних 10 документов\n"
+        "/stats — статистика по категориям\n"
+        "/cancel — отменить текущее действие"
     )
     await message.answer(help_text, parse_mode="Markdown")
 
 
 @router.message(Command("list"))
 async def cmd_list(message: types.Message) -> None:
-    """Выводит список последних 10 сохраненных документов."""
     async with async_session() as session:
         repo = DocumentRepository(session)
         docs = await repo.get_recent_documents(limit=10)
@@ -69,7 +97,6 @@ async def cmd_list(message: types.Message) -> None:
 
 @router.message(Command("stats"))
 async def cmd_stats(message: types.Message) -> None:
-    """Выводит статистику документов по категориям."""
     async with async_session() as session:
         repo = DocumentRepository(session)
         stats = await repo.get_stats_by_category()
