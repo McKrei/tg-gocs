@@ -182,4 +182,3 @@ async def test_get_drive_service_no_creds_error() -> None:
         pytest.raises(FileNotFoundError),
     ):
         get_drive_service()
-

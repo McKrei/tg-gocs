@@ -35,6 +35,51 @@ async def get_directory_tree(path_prefix: str = "") -> str:
     return "\n".join(lines)
 
 
+async def get_existing_structure() -> str:
+    """Возвращает описание существующей структуры папок и категорий."""
+    from sqlalchemy import select
+
+    from src.db.engine import async_session
+    from src.db.models import Document
+    from src.db.repository import DocumentRepository
+    from src.utils.logger import get_logger
+
+    tree = await get_directory_tree()
+    categories = []
+    owners = []
+
+    try:
+        async with async_session() as session:
+            repo = DocumentRepository(session)
+            stats = await repo.get_stats_by_category()
+            categories = [cat for cat, _ in stats]
+            stmt = select(Document.owner).distinct()
+            result = await session.execute(stmt)
+            owners = [str(row[0]) for row in result.all() if row[0]]
+    except Exception as e:
+        get_logger(__name__).error(f"Ошибка получения структуры из БД: {e}")
+
+    lines = []
+    if tree and tree != ".":
+        lines.append("Существующая структура папок на диске:")
+        lines.append(tree)
+        lines.append("")
+
+    if categories:
+        lines.append("Используемые категории в базе данных:")
+        for cat in categories:
+            lines.append(f"- {cat}")
+        lines.append("")
+
+    if owners:
+        lines.append("Существующие владельцы документов:")
+        for owner in owners:
+            lines.append(f"- {owner}")
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
 async def create_directory(path: str) -> bool:
     """Создает директорию локально. Возвращает True в случае успеха."""
     try:
@@ -81,6 +126,7 @@ async def save_to_local_and_drive(temp_filepath: str, target_path: str) -> dict[
     return {
         "local_path": str(dest_path),
         "gdrive_link": upload_result["link"],
+        "gdrive_folder_link": upload_result.get("folder_link"),
         "gdrive_error": upload_result["error"],
     }
 

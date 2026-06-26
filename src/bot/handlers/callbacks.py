@@ -69,13 +69,18 @@ async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FS
 
         gdrive_error = save_result.get("gdrive_error")
         if save_result["gdrive_link"]:
-            gdrive_text = f"☁️ Google Drive: [открыть файл]({save_result['gdrive_link']})"
+            folder_link = save_result.get("gdrive_folder_link")
+            folder_md = f" | [открыть папку]({folder_link})" if folder_link else ""
+            gdrive_text = (
+                f"☁️ Google Drive: `{target_path}`\n"
+                f"[открыть файл]({save_result['gdrive_link']}){folder_md}"
+            )
         elif gdrive_error:
             gdrive_text = f"☁️ Google Drive: ошибка загрузки — {gdrive_error}"
         else:
             gdrive_text = "☁️ Google Drive: не настроен"
 
-        text = f"✅ Документ успешно сохранен!\n\n📁 Локально: `{save_result['local_path']}`\n{gdrive_text}"
+        text = f"✅ Документ успешно сохранен!\n\n{gdrive_text}"
 
         if isinstance(callback.message, types.Message):
             await callback.message.edit_text(text, parse_mode="Markdown")

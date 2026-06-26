@@ -18,6 +18,7 @@ from src.agent.tools import (
     convert_to_pdf,
     create_directory,
     get_directory_tree,
+    get_existing_structure,
     save_to_local_and_drive,
     vector_search,
 )
@@ -148,7 +149,9 @@ async def test_save_to_local_and_drive(tmp_path: Path, monkeypatch: pytest.Monke
     temp_file = temp_dir / "passport.jpg"
     temp_file.write_text("some data")
 
-    with patch("src.agent.tools.upload_file_with_status", AsyncMock(return_value={"link": None, "error": "mock_error"})):
+    with patch(
+        "src.agent.tools.upload_file_with_status", AsyncMock(return_value={"link": None, "error": "mock_error"})
+    ):
         res = await save_to_local_and_drive(str(temp_file), "Личное/passport.jpg")
 
         assert res["gdrive_link"] is None
@@ -266,3 +269,36 @@ def test_normalize_draft_metadata_uses_today_when_document_date_missing() -> Non
     result = normalize_draft_metadata(draft, ".jpg", today="2026-06-26")
 
     assert result["suggested_filename"] == "2026-06-26 Документ.jpg"
+
+
+@pytest.mark.asyncio
+async def test_get_existing_structure(
+    db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Проверяет получение структуры папок и данных из БД."""
+    monkeypatch.setattr("src.config.settings.storage.local_storage_dir", str(tmp_path))
+    monkeypatch.setattr("src.agent.tools.async_session", lambda: db_session)
+
+    (tmp_path / "Медицина").mkdir()
+    (tmp_path / "Медицина" / "Жена").mkdir()
+
+    from src.db.repository import DocumentRepository
+
+    repo = DocumentRepository(db_session)
+    await repo.add_document(
+        saved_filename="pass.pdf",
+        local_path="/docs/pass.pdf",
+        category="Личные документы/Евгений",
+        owner="Евгений",
+        summary="Паспорт",
+        embedding=[0.1] * 768,
+        doc_id=uuid.uuid4(),
+    )
+    await db_session.commit()
+
+    structure = await get_existing_structure()
+
+    assert "Медицина" in structure
+    assert "Жена" in structure
+    assert "Личные документы/Евгений" in structure
+    assert "Евгений" in structure

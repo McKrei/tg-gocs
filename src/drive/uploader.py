@@ -81,7 +81,7 @@ def _find_or_create_folder_sync(service: Any, folder_name: str, parent_id: str) 
     return str(folder["id"])
 
 
-def _upload_file_sync(local_filepath: str, target_path: str) -> str:
+def _upload_file_sync(local_filepath: str, target_path: str) -> dict[str, str]:
     """Выполняет синхронную цепочку вызовов API для создания структуры папок и загрузки файла."""
     service = get_drive_service()
     local_path = Path(local_filepath)
@@ -106,16 +106,19 @@ def _upload_file_sync(local_filepath: str, target_path: str) -> str:
         .execute()
     )
 
-    return str(uploaded_file["webViewLink"])
+    return {
+        "webViewLink": str(uploaded_file["webViewLink"]),
+        "folderId": parent_id,
+    }
 
 
-async def _upload_file_with_retry(local_filepath: str, target_path: str) -> str:
+async def _upload_file_with_retry(local_filepath: str, target_path: str) -> dict[str, str]:
     """Выполняет выгрузку файла с повторными попытками."""
     attempts = 3
     delay = 1.0
     for attempt in range(1, attempts + 1):
         try:
-            result: str = await asyncio.to_thread(_upload_file_sync, local_filepath, target_path)
+            result: dict[str, str] = await asyncio.to_thread(_upload_file_sync, local_filepath, target_path)
             return result
         except Exception as e:
             if _is_non_retryable_upload_error(e):
@@ -142,13 +145,14 @@ async def upload_file_with_status(local_filepath: str, target_path: str) -> dict
     """Загружает файл на Google Drive и возвращает ссылку или причину ошибки."""
     if not is_drive_configured():
         logger.warning(f"Интеграция с Google Drive отключена. Файл {local_filepath} сохранен только локально.")
-        return {"link": None, "error": "Google Drive не настроен"}
+        return {"link": None, "folder_link": None, "error": "Google Drive не настроен"}
 
     try:
-        link: str = await _upload_file_with_retry(local_filepath, target_path)
-        logger.info(f"Файл {local_filepath} успешно выгружен на Google Drive: {link}")
-        return {"link": link, "error": None}
+        res: dict[str, str] = await _upload_file_with_retry(local_filepath, target_path)
+        folder_link = f"https://drive.google.com/drive/folders/{res['folderId']}"
+        logger.info(f"Файл {local_filepath} успешно выгружен на Google Drive: {res['webViewLink']}")
+        return {"link": res["webViewLink"], "folder_link": folder_link, "error": None}
     except Exception as e:
         error = _format_upload_error(e)
         logger.error(f"Ошибка после всех попыток выгрузки файла {local_filepath} на Google Drive: {error}")
-        return {"link": None, "error": error}
+        return {"link": None, "folder_link": None, "error": error}

@@ -15,8 +15,14 @@ async def refine_draft(old_draft: dict[str, Any], user_feedback: str) -> dict[st
     """Корректирует черновик классификации документа на основе фидбека пользователя."""
     client = get_llm_client()
 
+    from src.agent.tools import get_existing_structure
+
+    structure_info = await get_existing_structure()
+
     prompt = (
-        "Ты — помощник, который корректирует черновик метаданных документа на основе фидбека пользователя.\n"
+        "Ты — помощник, который корректирует черновик метаданных документа на основе фидбека пользователя. "
+        "Постарайся сопоставить документ с существующими папками, если они подходят.\n\n"
+        f"{structure_info}\n\n"
         f"Текущий черновик:\n{json.dumps(old_draft, ensure_ascii=False)}\n\n"
         f'Замечание пользователя:\n"{user_feedback}"\n\n'
         "Обнови черновик. Верни строго JSON-объект со следующими ключами:\n"

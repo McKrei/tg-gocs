@@ -55,9 +55,7 @@ def get_drive_service() -> Any:
                     str(creds_path),
                     scopes=["https://www.googleapis.com/auth/drive"],
                 )
-                logger.warning(
-                    "Используется Service Account. Загрузка может завершиться ошибкой storageQuotaExceeded."
-                )
+                logger.warning("Используется Service Account. Загрузка может завершиться ошибкой storageQuotaExceeded.")
             except Exception as e:
                 raise ValueError(f"Ошибка инициализации Service Account из {creds_path}: {e}") from e
         else:
