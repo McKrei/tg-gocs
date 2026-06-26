@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 
 
 class AuthMiddleware(BaseMiddleware):
-    """Проверяет права доступа пользователя по списку ALLOWED_USER_IDS."""
+    """Разрешает доступ только из чатов/групп из списка ALLOWED_CHAT_IDS."""
 
     async def __call__(
         self,
@@ -19,12 +19,13 @@ class AuthMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        user = data.get("event_from_user")
-        if not user:
+        chat = data.get("event_chat")
+        if not chat:
             return await handler(event, data)
 
-        if user.id not in settings.bot.allowed_user_ids:
-            logger.warning(f"Доступ заблокирован для user_id={user.id}, username={user.username}")
+        if settings.bot.allowed_chat_ids and chat.id not in settings.bot.allowed_chat_ids:
+            user = data.get("event_from_user")
+            logger.warning(f"Доступ заблокирован для chat_id={chat.id}, user_id={user.id if user else 'unknown'}")
             return None
 
         return await handler(event, data)

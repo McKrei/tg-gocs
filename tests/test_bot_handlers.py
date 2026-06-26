@@ -30,14 +30,14 @@ async def test_cmd_cancel() -> None:
 
 @pytest.mark.asyncio
 async def test_auth_middleware_allowed() -> None:
-    """Проверяет пропуск авторизованного пользователя."""
+    """Проверяет пропуск авторизованного чата."""
     middleware = AuthMiddleware()
     handler = AsyncMock()
     event = AsyncMock()
 
-    settings.bot.allowed_user_ids = [111]
-    user = MagicMock(id=111, username="user1")
-    data = {"event_from_user": user}
+    settings.bot.allowed_chat_ids = [-100123456789]
+    chat = MagicMock(id=-100123456789)
+    data = {"event_chat": chat, "event_from_user": MagicMock(id=111)}
 
     await middleware(handler, event, data)
     handler.assert_called_once_with(event, data)
@@ -45,14 +45,14 @@ async def test_auth_middleware_allowed() -> None:
 
 @pytest.mark.asyncio
 async def test_auth_middleware_denied() -> None:
-    """Проверяет блокировку неавторизованного пользователя."""
+    """Проверяет блокировку сообщения из неразрешённого чата."""
     middleware = AuthMiddleware()
     handler = AsyncMock()
     event = AsyncMock()
 
-    settings.bot.allowed_user_ids = [111]
-    user = MagicMock(id=222, username="user2")
-    data = {"event_from_user": user}
+    settings.bot.allowed_chat_ids = [-100123456789]
+    chat = MagicMock(id=-100999999999)
+    data = {"event_chat": chat, "event_from_user": MagicMock(id=222)}
 
     await middleware(handler, event, data)
     handler.assert_not_called()

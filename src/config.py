@@ -10,26 +10,26 @@ class BotConfig(BaseSettings):
     """Настройки Telegram-бота."""
 
     token: str = Field(..., alias="BOT_TOKEN")
-    allowed_user_ids: list[int] = Field(default_factory=list, alias="ALLOWED_USER_IDS")
+    allowed_chat_ids: list[int] = Field(default_factory=list, alias="ALLOWED_CHAT_IDS")
 
-    @field_validator("allowed_user_ids", mode="before")
+    @field_validator("allowed_chat_ids", mode="before")
     @classmethod
     def parse_allowed_ids(cls, v: Any) -> list[int]:
-        """Парсинг списка ID из строки, разделенной запятыми."""
+        """Парсинг списка chat_id из строки, разделенной запятыми."""
         if isinstance(v, str):
             if not v.strip():
                 return []
             try:
                 return [int(x.strip()) for x in v.split(",") if x.strip()]
             except ValueError as e:
-                raise ValueError("ALLOWED_USER_IDS должен содержать список чисел через запятую") from e
+                raise ValueError("ALLOWED_CHAT_IDS должен содержать список чисел через запятую") from e
         if isinstance(v, (int, float)):
             return [int(v)]
         if isinstance(v, (list, tuple, set)):
             return [int(x) for x in v]
         if v is None:
             return []
-        raise ValueError("Неверный формат для ALLOWED_USER_IDS")
+        raise ValueError("Неверный формат для ALLOWED_CHAT_IDS")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
