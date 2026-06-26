@@ -6,9 +6,12 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from sqlalchemy import select
+
 from src.agent.agent import classify_document, normalize_draft_metadata
 from src.config import settings
 from src.db.engine import async_session
+from src.db.models import Document
 from src.db.repository import DocumentRepository
 from src.drive.client import (
     delete_drive_file,
@@ -32,6 +35,8 @@ class SyncResult:
     skipped: int = 0
     errors: int = 0
     error_details: list[str] = field(default_factory=list)
+    removed: int = 0
+    removed_details: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -108,6 +113,35 @@ async def sync_drive_to_db() -> SyncResult:
         repo = DocumentRepository(session)
         indexed_links = await repo.get_all_gdrive_links()
 
+    # Очистка неактуальных документов из БД (которые были удалены на Google Drive вручную)
+    active_drive_links = {f["webViewLink"] for f in drive_files if f.get("webViewLink")}
+    async with async_session() as session:
+        repo = DocumentRepository(session)
+        stmt = select(Document).where(Document.gdrive_link.isnot(None))
+        db_docs = (await session.execute(stmt)).scalars().all()
+
+        for doc in db_docs:
+            if doc.gdrive_link not in active_drive_links:
+                # Удаляем локальный файл, если он существует
+                if doc.local_path:
+                    local_path = Path(doc.local_path)
+                    if not local_path.exists() and settings.storage.local_storage_enabled:
+                        local_path = Path(settings.storage.local_storage_dir) / doc.local_path
+                    if local_path.exists() and local_path.is_file():
+                        try:
+                            local_path.unlink()
+                            logger.info(f"Локальный файл удален при синхронизации: {local_path}")
+                        except Exception as e:
+                            logger.error(f"Не удалось удалить локальный файл {local_path} при синхронизации: {e}")
+
+                # Удаляем документ из БД
+                await repo.delete_document(doc.id)
+                result.removed += 1
+                result.removed_details.append(doc.saved_filename)
+                logger.info(f"Запись документа удалена из БД при синхронизации: {doc.saved_filename}")
+
+        await session.commit()
+
     logger.info(f"Уже проиндексировано: {len(indexed_links)} файлов")
 
     for file_info in drive_files:
@@ -137,7 +171,8 @@ async def sync_drive_to_db() -> SyncResult:
                     temp_path.unlink()
 
     logger.info(
-        f"Синхронизация завершена: добавлено={result.added}, пропущено={result.skipped}, ошибок={result.errors}"
+        f"Синхронизация завершена: добавлено={result.added}, пропущено={result.skipped}, "
+        f"удалено={result.removed}, ошибок={result.errors}"
     )
     return result
 

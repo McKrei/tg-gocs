@@ -156,6 +156,7 @@ async def cmd_sync(message: types.Message) -> None:
         parts = ["✅ Синхронизация завершена!\n"]
         parts.append(f"📥 Добавлено: *{result.added}*")
         parts.append(f"⏩ Пропущено (уже в БД): *{result.skipped}*")
+        parts.append(f"🗑️ Удалено неактуальных: *{result.removed}*")
         if result.errors:
             parts.append(f"❌ Ошибок: *{result.errors}*")
             if result.error_details:
