@@ -124,3 +124,20 @@ class DocumentRepository:
                 sorted_results.append((doc_map[doc_id], id_to_distance[doc_id]))
 
         return sorted_results
+
+    async def get_recent_documents(self, limit: int = 10) -> list[Document]:
+        """Возвращает список последних сохраненных документов."""
+        stmt = select(Document).order_by(Document.created_at.desc()).limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_stats_by_category(self) -> list[tuple[str, int]]:
+        """Возвращает количество документов по категориям."""
+        from sqlalchemy import func
+        stmt = (
+            select(Document.category, func.count(Document.id))
+            .group_by(Document.category)
+            .order_by(func.count(Document.id).desc())
+        )
+        result = await self.session.execute(stmt)
+        return [(str(row[0]), int(row[1])) for row in result.all()]

@@ -4,6 +4,7 @@ import httpx
 
 from src.config import settings
 from src.utils.logger import get_logger
+from src.utils.retry import with_retry
 
 logger = get_logger(__name__)
 
@@ -16,6 +17,8 @@ def _normalize_vector(vector: list[float]) -> list[float]:
     return [x / l2_norm for x in vector]
 
 
+
+@with_retry(attempts=3, initial_delay=1.0)
 async def get_embedding(text: str) -> list[float]:
     """Получает L2-нормализованный эмбеддинг текста через OpenRouter."""
     dim = settings.llm.embedding_dim

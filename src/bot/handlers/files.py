@@ -15,6 +15,8 @@ from src.utils.logger import get_logger
 router = Router()
 logger = get_logger(__name__)
 
+rate_limits: dict[int, list[float]] = {}
+
 
 def _cleanup_files(files: list[str]) -> None:
     """Удаляет временные файлы с диска."""
@@ -50,6 +52,25 @@ async def process_incoming_file(
     file_ext: str,
 ) -> None:
     """Общая логика сохранения файла и обновления FSM сессии."""
+    # 1. Проверка размера файла
+    max_bytes = settings.storage.max_file_size_mb * 1024 * 1024
+    if file_size > max_bytes:
+        await message.answer(
+            f"Файл слишком большой. Максимальный размер: {settings.storage.max_file_size_mb} МБ."
+        )
+        return
+
+    # 2. Ограничение частоты запросов (Rate Limiting)
+    user_id = message.from_user.id if message.from_user else 0
+    if user_id:
+        current_time = time.time()
+        user_requests = rate_limits.setdefault(user_id, [])
+        rate_limits[user_id] = [t for t in user_requests if current_time - t < 60]
+        if len(rate_limits[user_id]) >= settings.storage.rate_limit_per_minute:
+            await message.answer("Вы отправляете файлы слишком часто. Пожалуйста, подождите немного.")
+            return
+        rate_limits[user_id].append(current_time)
+
     temp_dir = Path(settings.storage.temp_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
     temp_path = temp_dir / f"{file_id}{file_ext}"

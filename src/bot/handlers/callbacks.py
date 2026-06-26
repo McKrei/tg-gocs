@@ -33,6 +33,7 @@ async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FS
     summary = draft["summary"]
     owner = draft["owner"]
 
+    final_temp_path = None
     try:
         # Если прислано несколько файлов, склеиваем их в PDF
         if len(files) > 1:
@@ -64,11 +65,6 @@ async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FS
             )
             await session.commit()
 
-        # Чистим временные файлы пакета и склеенный PDF
-        _cleanup_files(files)
-        if len(files) > 1:
-            _cleanup_files([final_temp_path])
-
         gdrive_text = (
             f"☁️ Google Drive: [открыть файл]({save_result['gdrive_link']})"
             if save_result["gdrive_link"]
@@ -84,11 +80,15 @@ async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FS
         if isinstance(callback.message, types.Message):
             await callback.message.edit_text(text, parse_mode="Markdown")
 
-        await state.clear()
-
     except Exception as e:
         logger.error(f"Ошибка при сохранении документа: {e}")
         await callback.answer("Произошла ошибка при сохранении файла.", show_alert=True)
+    finally:
+        # Гарантированная очистка временных ресурсов и сброс состояния
+        _cleanup_files(files)
+        if final_temp_path and len(files) > 1:
+            _cleanup_files([final_temp_path])
+        await state.clear()
 
 
 @router.callback_query(F.data == "cancel_save")

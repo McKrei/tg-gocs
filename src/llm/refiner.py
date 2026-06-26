@@ -5,10 +5,12 @@ from src.agent.agent import parse_json_content
 from src.config import settings
 from src.llm.client import get_llm_client
 from src.utils.logger import get_logger
+from src.utils.retry import with_retry
 
 logger = get_logger(__name__)
 
 
+@with_retry(attempts=3, initial_delay=1.0)
 async def refine_draft(old_draft: dict[str, Any], user_feedback: str) -> dict[str, Any]:
     """Корректирует черновик классификации документа на основе фидбека пользователя."""
     client = get_llm_client()

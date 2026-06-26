@@ -10,6 +10,7 @@ from src.agent.tools import TOOLS_MAP, TOOLS_SCHEMA
 from src.config import settings
 from src.llm.client import get_llm_client
 from src.utils.logger import get_logger
+from src.utils.retry import with_retry
 
 logger = get_logger(__name__)
 
@@ -43,6 +44,8 @@ def parse_json_content(content: str) -> dict[str, Any]:
         raise ValueError(f"Ответ модели не содержит валидного JSON: {content}") from e
 
 
+
+@with_retry(attempts=3, initial_delay=1.0)
 async def classify_document(temp_filepath: str) -> dict[str, Any]:
     """Проводит мультимодальный анализ документа, при необходимости используя инструменты."""
     base64_image = encode_image(temp_filepath)

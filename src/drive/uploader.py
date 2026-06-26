@@ -9,6 +9,7 @@ from googleapiclient.http import MediaFileUpload
 from src.config import settings
 from src.drive.client import get_drive_service, is_drive_configured
 from src.utils.logger import get_logger
+from src.utils.retry import with_retry
 
 logger = get_logger(__name__)
 
@@ -61,17 +62,24 @@ def _upload_file_sync(local_filepath: str, target_path: str) -> str:
     return str(uploaded_file["webViewLink"])
 
 
+
+@with_retry(attempts=3, initial_delay=1.0)
+async def _upload_file_with_retry(local_filepath: str, target_path: str) -> str:
+    """Выполняет выгрузку файла с повторными попытками."""
+    result: str = await asyncio.to_thread(_upload_file_sync, local_filepath, target_path)
+    return result
+
+
 async def upload_file(local_filepath: str, target_path: str) -> str | None:
-    """Запускает загрузку файла на Google Drive в отдельном потоке (неблокирующий вызов)."""
+    """Запускает загрузку файла на Google Drive в отдельном потоке с повторными попытками."""
     if not is_drive_configured():
         logger.warning(f"Интеграция с Google Drive отключена. Файл {local_filepath} сохранен только локально.")
         return None
 
     try:
-        # Выполняем блокирующие сетевые вызовы в отдельном потоке
-        link = await asyncio.to_thread(_upload_file_sync, local_filepath, target_path)
+        link: str = await _upload_file_with_retry(local_filepath, target_path)
         logger.info(f"Файл {local_filepath} успешно выгружен на Google Drive: {link}")
         return link
     except Exception as e:
-        logger.error(f"Ошибка при выгрузке файла {local_filepath} на Google Drive: {e}")
+        logger.error(f"Ошибка после всех попыток выгрузки файла {local_filepath} на Google Drive: {e}")
         return None
