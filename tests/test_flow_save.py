@@ -5,7 +5,7 @@ import pytest
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 
-from src.bot.handlers.callbacks import handle_cancel_save, handle_confirm_save
+from src.bot.handlers.callbacks import handle_cancel_save, handle_confirm_save, handle_replace_save
 from src.bot.handlers.files import handle_photo
 from src.bot.handlers.text import handle_refinement
 from src.bot.states import DocumentProcessingStates
@@ -157,3 +157,74 @@ async def test_flow_cancel() -> None:
         state.clear.assert_called_once()
         callback.answer.assert_called_once_with("Сохранение отменено.")
         callback.message.edit_text.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_flow_replace_save() -> None:
+    """Проверяет сценарий замены существующего документа."""
+    callback = AsyncMock()
+    callback.message = AsyncMock(spec=types.Message)
+    callback.message.edit_text = AsyncMock()
+    bot = AsyncMock()
+    state = AsyncMock(spec=FSMContext)
+
+    fsm_data = {
+        "files": ["file1.jpg"],
+        "draft": {
+            "category": "Медицина",
+            "suggested_filename": "polis.jpg",
+            "summary": "Медицинский полис",
+            "owner": "Жена",
+        },
+        "duplicate_id": "00000000-0000-0000-0000-000000000000",
+    }
+
+    state.get_data = AsyncMock(return_value=fsm_data)
+    state.clear = AsyncMock()
+
+    save_result = {
+        "local_path": "data/documents/Медицина/polis.jpg",
+        "gdrive_link": "https://drive.google.com/polis",
+        "gdrive_folder_link": "https://drive.google.com/folder",
+        "gdrive_error": None,
+    }
+
+    import uuid
+
+    from src.db.models import Document
+
+    mock_old_doc = MagicMock(spec=Document)
+    mock_old_doc.local_path = "data/documents/Медицина/polis_old.jpg"
+    mock_old_doc.gdrive_link = "https://drive.google.com/file/d/old_gdrive_id/view"
+
+    with (
+        patch("src.bot.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
+        patch("src.bot.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
+        patch("src.bot.handlers.callbacks.async_session") as mock_session_maker,
+        patch("src.bot.handlers.callbacks.delete_file_from_drive", AsyncMock()) as mock_del_drive,
+        patch("src.bot.handlers.callbacks.extract_gdrive_file_id", return_value="old_gdrive_id"),
+        patch("src.bot.handlers.callbacks._cleanup_files") as mock_cleanup,
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.unlink", MagicMock()) as mock_unlink,
+    ):
+        mock_session = AsyncMock()
+        mock_session_maker.return_value.__aenter__.return_value = mock_session
+
+        with patch("src.bot.handlers.callbacks.DocumentRepository") as mock_repo_class:
+            mock_repo = MagicMock()
+            mock_repo.get_document = AsyncMock(return_value=mock_old_doc)
+            mock_repo.delete_document = AsyncMock(return_value=True)
+            mock_repo.add_document = AsyncMock()
+            mock_repo_class.return_value = mock_repo
+
+            await handle_replace_save(callback, bot, state)
+
+            mock_repo.get_document.assert_called_once_with(uuid.UUID("00000000-0000-0000-0000-000000000000"))
+            mock_unlink.assert_called_once()
+            mock_del_drive.assert_called_once_with("old_gdrive_id")
+            mock_repo.delete_document.assert_called_once()
+            mock_repo.add_document.assert_called_once()
+            mock_session.commit.assert_called()
+            state.clear.assert_called_once()
+            assert "Документ успешно заменен" in callback.message.edit_text.call_args_list[-1].args[0]
+            assert mock_cleanup.call_count > 0

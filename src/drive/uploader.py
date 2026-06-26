@@ -135,6 +135,40 @@ async def _upload_file_with_retry(local_filepath: str, target_path: str) -> dict
     raise RuntimeError("Выгрузка файла на Google Drive завершилась без результата.")
 
 
+def find_folder_by_path_sync(category: str) -> str | None:
+    """Ищет идентификатор папки в Google Drive по её относительному пути."""
+    service = get_drive_service()
+    parent_id = settings.storage.gdrive_root_folder_id
+    parts = [p for p in Path(category).parts if p and p != "."]
+
+    for folder_name in parts:
+        query = (
+            f"name = '{folder_name}' "
+            f"and '{parent_id}' in parents "
+            f"and mimeType = 'application/vnd.google-apps.folder' "
+            f"and trashed = false"
+        )
+        try:
+            results = (
+                service.files()
+                .list(q=query, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True)
+                .execute()
+            )
+            files = results.get("files", [])
+            if not files:
+                return None
+            parent_id = str(files[0]["id"])
+        except Exception:
+            return None
+
+    return parent_id
+
+
+async def find_folder_by_path(category: str) -> str | None:
+    """Ищет идентификатор папки в Google Drive по её относительному пути."""
+    return await asyncio.to_thread(find_folder_by_path_sync, category)
+
+
 async def upload_file(local_filepath: str, target_path: str) -> str | None:
     """Запускает загрузку файла на Google Drive в отдельном потоке с повторными попытками."""
     result = await upload_file_with_status(local_filepath, target_path)

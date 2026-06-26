@@ -17,8 +17,11 @@ from src.agent.agent import classify_document, normalize_draft_metadata
 from src.agent.tools import (
     convert_to_pdf,
     create_directory,
+    extract_gdrive_file_id,
+    find_similar_document,
     get_directory_tree,
     get_existing_structure,
+    get_unique_filename,
     save_to_local_and_drive,
     vector_search,
 )
@@ -302,3 +305,63 @@ async def test_get_existing_structure(
     assert "Жена" in structure
     assert "Личные документы/Евгений" in structure
     assert "Евгений" in structure
+
+
+def test_extract_gdrive_file_id() -> None:
+    """Проверяет извлечение Google Drive ID из ссылки."""
+    link = "https://drive.google.com/file/d/1vG58XAG3ajQR11B8EeCoNT6YQJyedbKY/view?usp=drivesdk"
+    assert extract_gdrive_file_id(link) == "1vG58XAG3ajQR11B8EeCoNT6YQJyedbKY"
+
+    assert extract_gdrive_file_id("invalid-link") is None
+
+
+def test_get_unique_filename(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Проверяет генерацию уникального имени файла."""
+    monkeypatch.setattr("src.config.settings.storage.local_storage_dir", str(tmp_path))
+    category = "Personal"
+    (tmp_path / category).mkdir(parents=True, exist_ok=True)
+
+    filename = "doc.pdf"
+    assert get_unique_filename(category, filename) == "doc.pdf"
+
+    (tmp_path / category / filename).write_text("some content")
+    assert get_unique_filename(category, filename) == "doc_1.pdf"
+
+    (tmp_path / category / "doc_1.pdf").write_text("some content")
+    assert get_unique_filename(category, filename) == "doc_2.pdf"
+
+
+@pytest.mark.asyncio
+async def test_find_similar_document(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Проверяет поиск похожих документов по пути и вектору."""
+    monkeypatch.setattr("src.agent.tools.async_session", lambda: db_session)
+
+    from src.db.repository import DocumentRepository
+
+    repo = DocumentRepository(db_session)
+    await repo.add_document(
+        saved_filename="pass.pdf",
+        local_path="/docs/pass.pdf",
+        category="Personal",
+        owner="Ivan",
+        summary="Паспорт Ивана",
+        embedding=[0.1] * 768,
+        doc_id=uuid.uuid4(),
+    )
+    await db_session.commit()
+
+    res_exact = await find_similar_document("Personal", "pass.pdf", "Другое описание")
+    assert res_exact is not None
+    assert res_exact["reason"] == "exact_path"
+    assert res_exact["similarity_percent"] == 100
+
+    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)):
+        res_semantic = await find_similar_document("Other", "passport.pdf", "Похожее описание")
+        assert res_semantic is not None
+        assert res_semantic["reason"] == "semantic"
+        assert res_semantic["similarity_percent"] > 90
+
+    dummy_emb = [0.1 if i % 2 == 0 else -0.1 for i in range(768)]
+    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=dummy_emb)):
+        res_diff = await find_similar_document("Other", "passport.pdf", "Совсем другой документ")
+        assert res_diff is None

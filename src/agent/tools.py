@@ -1,5 +1,7 @@
 """Инструменты, доступные агенту для выполнения операций над файлами и БД."""
 
+import asyncio
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -39,7 +41,6 @@ async def get_existing_structure() -> str:
     """Возвращает описание существующей структуры папок и категорий."""
     from sqlalchemy import select
 
-    from src.db.engine import async_session
     from src.db.models import Document
     from src.db.repository import DocumentRepository
     from src.utils.logger import get_logger
@@ -78,6 +79,96 @@ async def get_existing_structure() -> str:
         lines.append("")
 
     return "\n".join(lines).strip()
+
+
+def extract_gdrive_file_id(link: str) -> str | None:
+    """Извлекает идентификатор файла из ссылки Google Drive."""
+    match = re.search(r"/d/([a-zA-Z0-9_-]+)", link)
+    return match.group(1) if match else None
+
+
+def _delete_file_sync(file_id: str) -> None:
+    from src.drive.client import get_drive_service
+
+    service = get_drive_service()
+    service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
+
+
+async def delete_file_from_drive(file_id: str) -> None:
+    """Удаляет файл из Google Drive по его идентификатору."""
+    from src.drive.client import is_drive_configured
+    from src.utils.logger import get_logger
+
+    if not is_drive_configured():
+        return
+    try:
+        await asyncio.to_thread(_delete_file_sync, file_id)
+    except Exception as e:
+        get_logger(__name__).error(f"Ошибка удаления файла {file_id} из Drive: {e}")
+
+
+def get_unique_filename(category: str, filename: str) -> str:
+    """Возвращает уникальное имя файла, если файл с таким именем уже существует."""
+    base_dir = Path(settings.storage.local_storage_dir) / category
+    path = base_dir / filename
+    if not path.exists():
+        return filename
+
+    stem = Path(filename).stem
+    suffix = Path(filename).suffix
+    counter = 1
+    while True:
+        new_filename = f"{stem}_{counter}{suffix}"
+        if not (base_dir / new_filename).exists():
+            return new_filename
+        counter += 1
+
+
+async def find_similar_document(category: str, filename: str, summary: str) -> dict[str, Any] | None:
+    """Ищет похожий документ по пути или векторной близости."""
+    from sqlalchemy import select
+
+    from src.db.models import Document
+    from src.db.repository import DocumentRepository
+    from src.utils.logger import get_logger
+
+    async with async_session() as session:
+        repo = DocumentRepository(session)
+        stmt = select(Document).where(Document.category == category, Document.saved_filename == filename)
+        result = await session.execute(stmt)
+        exact_doc = result.scalar_one_or_none()
+        if exact_doc:
+            return {
+                "id": exact_doc.id,
+                "saved_filename": exact_doc.saved_filename,
+                "category": exact_doc.category,
+                "summary": exact_doc.summary,
+                "gdrive_link": exact_doc.gdrive_link,
+                "local_path": exact_doc.local_path,
+                "reason": "exact_path",
+                "similarity_percent": 100,
+            }
+
+        try:
+            emb = await get_embedding(summary)
+            similar = await repo.search_documents(emb, limit=1)
+            if similar:
+                doc, distance = similar[0]
+                if distance < 0.15:
+                    return {
+                        "id": doc.id,
+                        "saved_filename": doc.saved_filename,
+                        "category": doc.category,
+                        "summary": doc.summary,
+                        "gdrive_link": doc.gdrive_link,
+                        "local_path": doc.local_path,
+                        "reason": "semantic",
+                        "similarity_percent": round((1.0 - distance) * 100),
+                    }
+        except Exception as e:
+            get_logger(__name__).error(f"Ошибка поиска дубликатов: {e}")
+
+    return None
 
 
 async def create_directory(path: str) -> bool:

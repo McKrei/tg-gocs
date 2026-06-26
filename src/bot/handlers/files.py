@@ -8,7 +8,8 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 
 from src.agent.agent import classify_document, normalize_draft_metadata
-from src.bot.keyboards import get_confirmation_keyboard
+from src.agent.tools import find_similar_document
+from src.bot.keyboards import get_confirmation_keyboard, get_duplicate_confirmation_keyboard
 from src.bot.states import DocumentProcessingStates
 from src.config import settings
 from src.utils.logger import get_logger
@@ -41,6 +42,30 @@ def format_draft_message(draft: dict[str, Any], file_count: int) -> str:
         f"📝 Имя файла: {draft.get('suggested_filename', 'document.pdf')}\n"
         f"ℹ️ Описание: {draft.get('summary', 'Нет описания')}\n\n"
         f"Можете уточнить любое поле текстом или сохранить как есть."
+    )
+
+
+def format_draft_message_with_warning(draft: dict[str, Any], file_count: int, similar_doc: dict[str, Any]) -> str:
+    """Форматирует сообщение с предупреждением о дубликате."""
+    header = "📄 Получен файл." if file_count == 1 else f"📄 Получен пакет из {file_count} файлов."
+    similarity = similar_doc.get("similarity_percent", 100)
+    reason = (
+        "найден файл с таким же именем и категорией"
+        if similar_doc["reason"] == "exact_path"
+        else f"найден похожий файл (похожесть {similarity}%)"
+    )
+    return (
+        f"{header}\n\n"
+        f"⚠️ **Внимание: {reason}!**\n"
+        f"📁 Категория: `{similar_doc['category']}`\n"
+        f"📝 Имя файла: `{similar_doc['saved_filename']}`\n"
+        f"ℹ️ Описание: {similar_doc['summary']}\n\n"
+        f"--- Предлагаемые метаданные нового документа ---\n"
+        f"📁 Категория: {draft.get('category', 'Не определено')}\n"
+        f"👤 Владелец: {draft.get('owner', 'Не определено')}\n"
+        f"📝 Имя файла: {draft.get('suggested_filename', 'document.pdf')}\n"
+        f"ℹ️ Описание: {draft.get('summary', 'Нет описания')}\n\n"
+        f"Вы можете заменить существующий документ, сохранить его как новый или отменить."
     )
 
 
@@ -106,30 +131,53 @@ async def process_incoming_file(
             }
 
         draft = normalize_draft_metadata(draft, file_ext)
+        similar_doc = await find_similar_document(draft["category"], draft["suggested_filename"], draft["summary"])
+        duplicate_id = str(similar_doc["id"]) if similar_doc else None
 
         await state.update_data(
             files=files,
             draft=draft,
+            duplicate_id=duplicate_id,
             msg_id=status_msg.message_id,
             last_activity=current_time,
         )
 
-        text = format_draft_message(draft, len(files))
-        await status_msg.edit_text(text, reply_markup=get_confirmation_keyboard(multi_file=False))
+        if similar_doc:
+            text = format_draft_message_with_warning(draft, len(files), similar_doc)
+            reply_markup = get_duplicate_confirmation_keyboard(multi_file=False)
+        else:
+            text = format_draft_message(draft, len(files))
+            reply_markup = get_confirmation_keyboard(multi_file=False)
+
+        await status_msg.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
     else:
         draft = data["draft"]
         msg_id = data["msg_id"]
 
-        await state.update_data(files=files, last_activity=current_time)
+        similar_doc = await find_similar_document(draft["category"], draft["suggested_filename"], draft["summary"])
+        duplicate_id = str(similar_doc["id"]) if similar_doc else None
 
-        text = format_draft_message(draft, len(files))
+        await state.update_data(
+            files=files,
+            duplicate_id=duplicate_id,
+            last_activity=current_time,
+        )
+
+        if similar_doc:
+            text = format_draft_message_with_warning(draft, len(files), similar_doc)
+            reply_markup = get_duplicate_confirmation_keyboard(multi_file=True)
+        else:
+            text = format_draft_message(draft, len(files))
+            reply_markup = get_confirmation_keyboard(multi_file=True)
+
         try:
             await bot.edit_message_text(
                 chat_id=message.chat.id,
                 message_id=msg_id,
                 text=text,
-                reply_markup=get_confirmation_keyboard(multi_file=True),
+                reply_markup=reply_markup,
+                parse_mode="Markdown",
             )
         except Exception as e:
             logger.warning(f"Не удалось обновить драфт-сообщение: {e}")

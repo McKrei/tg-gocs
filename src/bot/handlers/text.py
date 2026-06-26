@@ -5,8 +5,9 @@ from aiogram import Bot, F, Router, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 
-from src.bot.handlers.files import format_draft_message
-from src.bot.keyboards import get_confirmation_keyboard
+from src.agent.tools import find_similar_document
+from src.bot.handlers.files import format_draft_message, format_draft_message_with_warning
+from src.bot.keyboards import get_confirmation_keyboard, get_duplicate_confirmation_keyboard
 from src.bot.states import DocumentProcessingStates
 from src.llm.refiner import refine_draft
 from src.utils.logger import get_logger
@@ -48,20 +49,31 @@ async def handle_refinement(message: types.Message, bot: Bot, state: FSMContext)
     # Корректируем черновик через LLM
     new_draft = await refine_draft(old_draft, message.text)
     current_time = time.time()
+    similar_doc = await find_similar_document(
+        new_draft["category"], new_draft["suggested_filename"], new_draft["summary"]
+    )
+    duplicate_id = str(similar_doc["id"]) if similar_doc else None
 
     await state.update_data(
         draft=new_draft,
+        duplicate_id=duplicate_id,
         last_activity=current_time,
     )
 
-    text = format_draft_message(new_draft, len(files))
+    if similar_doc:
+        text = format_draft_message_with_warning(new_draft, len(files), similar_doc)
+        reply_markup = get_duplicate_confirmation_keyboard(multi_file=(len(files) > 1))
+    else:
+        text = format_draft_message(new_draft, len(files))
+        reply_markup = get_confirmation_keyboard(multi_file=(len(files) > 1))
 
     try:
         await bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=msg_id,
             text=text,
-            reply_markup=get_confirmation_keyboard(multi_file=(len(files) > 1)),
+            reply_markup=reply_markup,
+            parse_mode="Markdown",
         )
     except Exception as e:
         logger.warning(f"Не удалось обновить драфт-сообщение: {e}")

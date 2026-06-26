@@ -8,7 +8,7 @@ from googleapiclient.errors import HttpError
 from httplib2 import Response
 
 from src.drive.client import get_drive_service, is_drive_configured
-from src.drive.uploader import upload_file, upload_file_with_status
+from src.drive.uploader import find_folder_by_path, upload_file, upload_file_with_status
 
 
 @pytest.mark.asyncio
@@ -182,3 +182,24 @@ async def test_get_drive_service_no_creds_error() -> None:
         pytest.raises(FileNotFoundError),
     ):
         get_drive_service()
+
+
+@pytest.mark.asyncio
+async def test_find_folder_by_path() -> None:
+    """Проверяет поиск идентификатора папки в Google Drive по её пути."""
+    mock_service = MagicMock()
+    mock_files = MagicMock()
+    mock_list = MagicMock()
+
+    mock_service.files.return_value = mock_files
+    mock_files.list.return_value = mock_list
+
+    mock_list.execute.return_value = {"files": [{"id": "folder_456"}]}
+
+    with (
+        patch("src.drive.uploader.is_drive_configured", return_value=True),
+        patch("src.drive.uploader.get_drive_service", return_value=mock_service),
+    ):
+        folder_id = await find_folder_by_path("Личные/Документы")
+        assert folder_id == "folder_456"
+        assert mock_files.list.call_count == 2

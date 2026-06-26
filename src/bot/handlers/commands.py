@@ -77,6 +77,11 @@ async def cmd_help(message: types.Message) -> None:
 
 @router.message(Command("list"))
 async def cmd_list(message: types.Message) -> None:
+    """Выводит список последних 10 документов с группировкой по категориям."""
+    from collections import defaultdict
+
+    from src.drive.uploader import find_folder_by_path
+
     async with async_session() as session:
         repo = DocumentRepository(session)
         docs = await repo.get_recent_documents(limit=10)
@@ -85,13 +90,29 @@ async def cmd_list(message: types.Message) -> None:
         await message.answer("В базе данных пока нет сохраненных документов.")
         return
 
-    text = "📋 *Последние 10 документов:*\n\n"
-    for i, doc in enumerate(docs, 1):
-        date_str = doc.created_at.strftime("%d.%m.%Y")
-        text += f"{i}. *{doc.saved_filename}*\n   📁 {doc.category} | 📅 {date_str}\n"
-        if doc.gdrive_link:
-            text += f"   ☁️ [Google Drive]({doc.gdrive_link})\n"
+    unique_categories = list({doc.category for doc in docs})
+    category_folders = {}
+    for cat in unique_categories:
+        folder_id = await find_folder_by_path(cat)
+        if folder_id:
+            category_folders[cat] = f"https://drive.google.com/drive/folders/{folder_id}"
+
+    grouped = defaultdict(list)
+    for doc in docs:
+        grouped[doc.category].append(doc)
+
+    text = "📋 *Последние документы по категориям:*\n\n"
+    for category, category_docs in grouped.items():
+        folder_link = category_folders.get(category)
+        folder_md = f" [📂 открыть папку]({folder_link})" if folder_link else ""
+        text += f"📁 *{category}*{folder_md}\n"
+
+        for doc in category_docs:
+            date_str = doc.created_at.strftime("%d.%m.%Y")
+            gdrive_md = f" | [☁️ файл]({doc.gdrive_link})" if doc.gdrive_link else ""
+            text += f"  • *{doc.saved_filename}* (📅 {date_str}){gdrive_md}\n"
         text += "\n"
+
     await message.answer(text, parse_mode="Markdown", disable_web_page_preview=True)
 
 
