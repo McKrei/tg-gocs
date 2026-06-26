@@ -72,17 +72,16 @@ async def db_session(test_engine) -> AsyncSession:
 @pytest.mark.asyncio
 async def test_get_embedding() -> None:
     """Проверяет генерацию эмбеддингов через мок-клиент OpenRouter."""
-    mock_response = MagicMock()
-    mock_response.data = [MagicMock(embedding=[0.1] * 768)]
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"data": [{"embedding": [0.1] * 768}]}
 
-    with patch("src.llm.embeddings.get_llm_client") as mock_get_client:
-        mock_client = MagicMock()
-        mock_client.embeddings.create = AsyncMock(return_value=mock_response)
-        mock_get_client.return_value = mock_client
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = mock_resp
 
         vec = await get_embedding("тестовый текст")
         assert vec == [0.1] * 768
-        mock_client.embeddings.create.assert_called_once()
+        mock_post.assert_called_once()
 
 
 @pytest.mark.asyncio
