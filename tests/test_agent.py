@@ -80,7 +80,14 @@ async def test_get_embedding() -> None:
         mock_post.return_value = mock_resp
 
         vec = await get_embedding("тестовый текст")
-        assert vec == [0.1] * 768
+        assert len(vec) == 768
+
+        # Проверяем, что вектор нормализован
+        import math
+
+        l2_norm = math.sqrt(sum(x * x for x in vec))
+        assert pytest.approx(l2_norm, rel=1e-3) == 1.0
+
         mock_post.assert_called_once()
 
 

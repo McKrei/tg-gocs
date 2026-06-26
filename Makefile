@@ -1,12 +1,21 @@
-.PHONY: run test lint format up down clean
+.PHONY: run test test-integration test-all lint format up down clean
 
 # Запуск бота в dev-режиме
 run:
 	uv run python -m src.bot.main
 
-# Запуск тестов
+# Запуск обычных юнит/интеграционных тестов (без внешних API вызовов)
 test:
+	uv run pytest -v -m "not integration"
+
+# Запуск только интеграционных тестов (с проверкой реального OpenRouter и Drive)
+test-integration:
+	uv run pytest -v -m "integration"
+
+# Запуск абсолютно всех тестов
+test-all:
 	uv run pytest -v
+
 
 # Запуск линтеров и статического анализа
 lint:

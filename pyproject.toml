@@ -46,3 +46,9 @@ strict = true
 ignore_missing_imports = true
 exclude = ["venv", ".venv", "tests"]
 
+[tool.pytest.ini_options]
+markers = [
+    "integration: integration tests requiring external API access (OpenRouter, Google Drive)"
+]
+
+
