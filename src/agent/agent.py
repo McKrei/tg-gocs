@@ -2,7 +2,6 @@
 
 import base64
 import json
-import logging
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -10,8 +9,10 @@ from typing import Any, cast
 from src.agent.tools import TOOLS_MAP, TOOLS_SCHEMA
 from src.config import settings
 from src.llm.client import get_llm_client
+from src.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
 
 
 def encode_image(image_path: str) -> str:

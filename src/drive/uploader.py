@@ -1,7 +1,6 @@
 """Модуль для асинхронной загрузки файлов в Google Drive с сохранением структуры папок."""
 
 import asyncio
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -9,8 +8,9 @@ from googleapiclient.http import MediaFileUpload
 
 from src.config import settings
 from src.drive.client import get_drive_service, is_drive_configured
+from src.utils.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _find_or_create_folder_sync(service: Any, folder_name: str, parent_id: str) -> str:

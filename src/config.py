@@ -40,6 +40,7 @@ class LLMConfig(BaseSettings):
     api_key: str = Field(..., alias="OPENROUTER_API_KEY")
     model_name: str = Field("google/gemini-3.5-flash", alias="LLM_MODEL")
     embedding_model_name: str = Field("google/gemini-embedding-2", alias="EMBEDDING_MODEL")
+    embedding_dim: int = Field(768, alias="EMBEDDING_DIM")
     base_url: str = Field("https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
