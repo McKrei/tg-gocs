@@ -9,6 +9,7 @@ from PIL import Image
 from src.config import settings
 from src.db.engine import async_session
 from src.db.repository import DocumentRepository
+from src.drive.uploader import upload_file
 from src.llm.embeddings import get_embedding
 
 
@@ -65,7 +66,7 @@ async def convert_to_pdf(temp_file_ids: list[str], output_filename: str) -> str:
 
 
 async def save_to_local_and_drive(temp_filepath: str, target_path: str) -> dict[str, str | None]:
-    """Сохраняет временный файл локально (Drive является заглушкой)."""
+    """Сохраняет временный файл локально и выгружает его на Google Drive."""
     temp_path = Path(temp_filepath)
     if not temp_path.exists():
         raise FileNotFoundError(f"Временный файл не найден: {temp_filepath}")
@@ -75,7 +76,10 @@ async def save_to_local_and_drive(temp_filepath: str, target_path: str) -> dict[
 
     shutil.copy2(temp_path, dest_path)
 
-    return {"local_path": str(dest_path), "gdrive_link": None}
+    # Выгружаем на Google Drive (вернет ссылку или None, если интеграция отключена)
+    gdrive_link = await upload_file(str(dest_path), target_path)
+
+    return {"local_path": str(dest_path), "gdrive_link": gdrive_link}
 
 
 async def vector_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
