@@ -42,10 +42,10 @@ MONTH_DATE_RE = re.compile(
 )
 
 
-def encode_image(image_path: str) -> str:
-    """Кодирует файл изображения в строку формата base64."""
-    with Path(image_path).open("rb") as image_file:
-        return base64.b64encode(image_file.read()).decode("utf-8")
+def encode_file(file_path: str) -> str:
+    """Кодирует файл в строку base64."""
+    with Path(file_path).open("rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
 
 
 def parse_json_content(content: str) -> dict[str, Any]:
@@ -118,8 +118,25 @@ def normalize_draft_metadata(draft: dict[str, Any], file_ext: str, today: str | 
 @with_retry(attempts=3, initial_delay=1.0)
 async def classify_document(temp_filepath: str) -> dict[str, Any]:
     """Проводит мультимодальный анализ документа, при необходимости используя инструменты."""
-    base64_image = encode_image(temp_filepath)
+    file_path = Path(temp_filepath)
+    suffix = file_path.suffix.lower()
+    base64_data = encode_file(temp_filepath)
     client = get_llm_client()
+
+    if suffix == ".pdf":
+        media_content = {
+            "type": "file",
+            "file": {
+                "filename": file_path.name,
+                "file_data": f"data:application/pdf;base64,{base64_data}",
+            },
+        }
+    else:
+        mime_type = "image/png" if suffix == ".png" else "image/jpeg"
+        media_content = {
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime_type};base64,{base64_data}"},
+        }
 
     messages: list[dict[str, Any]] = [
         {
@@ -148,10 +165,7 @@ async def classify_document(temp_filepath: str) -> dict[str, Any]:
             "role": "user",
             "content": [
                 {"type": "text", "text": "Классифицируй этот документ:"},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
-                },
+                media_content,
             ],
         },
     ]

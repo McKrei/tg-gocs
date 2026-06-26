@@ -93,6 +93,7 @@ async def test_upload_file_with_status_does_not_retry_permanent_quota_error(tmp_
     mock_upload.assert_called_once()
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(not is_drive_configured(), reason="Интеграция с Google Drive не настроена.")
 @pytest.mark.asyncio
 async def test_upload_file_real(tmp_path: Path) -> None:

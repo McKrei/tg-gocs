@@ -148,11 +148,13 @@ async def test_save_to_local_and_drive(tmp_path: Path, monkeypatch: pytest.Monke
     temp_file = temp_dir / "passport.jpg"
     temp_file.write_text("some data")
 
-    res = await save_to_local_and_drive(str(temp_file), "Личное/passport.jpg")
+    with patch("src.agent.tools.upload_file_with_status", AsyncMock(return_value={"link": None, "error": "mock_error"})):
+        res = await save_to_local_and_drive(str(temp_file), "Личное/passport.jpg")
 
-    assert res["gdrive_link"] is None
-    assert Path(res["local_path"]).exists()
-    assert (local_dir / "Личное" / "passport.jpg").exists()
+        assert res["gdrive_link"] is None
+        assert res["gdrive_error"] == "mock_error"
+        assert Path(res["local_path"]).exists()
+        assert (local_dir / "Личное" / "passport.jpg").exists()
 
 
 @pytest.mark.asyncio
