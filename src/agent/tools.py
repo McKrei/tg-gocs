@@ -172,16 +172,30 @@ async def find_similar_document(category: str, filename: str, summary: str) -> d
             if similar:
                 doc, distance = similar[0]
                 if distance < 0.15:
-                    return {
-                        "id": doc.id,
-                        "saved_filename": doc.saved_filename,
-                        "category": doc.category,
-                        "summary": doc.summary,
-                        "gdrive_link": doc.gdrive_link,
-                        "local_path": doc.local_path,
-                        "reason": "semantic",
-                        "similarity_percent": round((1.0 - distance) * 100),
+                    from src.llm.duplicate_verifier import check_is_duplicate
+
+                    new_doc = {
+                        "category": category,
+                        "suggested_filename": filename,
+                        "summary": summary,
                     }
+                    existing_doc = {
+                        "category": doc.category,
+                        "saved_filename": doc.saved_filename,
+                        "summary": doc.summary,
+                    }
+
+                    if await check_is_duplicate(new_doc, existing_doc):
+                        return {
+                            "id": doc.id,
+                            "saved_filename": doc.saved_filename,
+                            "category": doc.category,
+                            "summary": doc.summary,
+                            "gdrive_link": doc.gdrive_link,
+                            "local_path": doc.local_path,
+                            "reason": "semantic",
+                            "similarity_percent": round((1.0 - distance) * 100),
+                        }
         except Exception as e:
             get_logger(__name__).error(f"Ошибка поиска дубликатов: {e}")
 

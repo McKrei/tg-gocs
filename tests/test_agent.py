@@ -355,7 +355,8 @@ async def test_find_similar_document(db_session: AsyncSession, monkeypatch: pyte
     assert res_exact["reason"] == "exact_path"
     assert res_exact["similarity_percent"] == 100
 
-    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)):
+    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)), \
+         patch("src.llm.duplicate_verifier.check_is_duplicate", AsyncMock(return_value=True)):
         res_semantic = await find_similar_document("Other", "passport.pdf", "Похожее описание")
         assert res_semantic is not None
         assert res_semantic["reason"] == "semantic"
@@ -365,3 +366,65 @@ async def test_find_similar_document(db_session: AsyncSession, monkeypatch: pyte
     with patch("src.agent.tools.get_embedding", AsyncMock(return_value=dummy_emb)):
         res_diff = await find_similar_document("Other", "passport.pdf", "Совсем другой документ")
         assert res_diff is None
+
+
+@pytest.mark.asyncio
+async def test_find_similar_document_not_duplicate(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Проверяет, что если LLM считает документы разными, похожий документ не возвращается."""
+    monkeypatch.setattr("src.agent.tools.async_session", lambda: db_session)
+
+    from src.db.repository import DocumentRepository
+
+    repo = DocumentRepository(db_session)
+    await repo.add_document(
+        saved_filename="pass.pdf",
+        local_path="/docs/pass.pdf",
+        category="Personal",
+        owner="Ivan",
+        summary="Паспорт Ивана",
+        embedding=[0.1] * 768,
+        doc_id=uuid.uuid4(),
+    )
+    await db_session.commit()
+
+    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)), \
+         patch("src.llm.duplicate_verifier.check_is_duplicate", AsyncMock(return_value=False)):
+        res_semantic = await find_similar_document("Other", "passport.pdf", "Похожее описание")
+        assert res_semantic is None
+
+
+@pytest.mark.asyncio
+async def test_check_is_duplicate() -> None:
+    """Проверяет функцию check_is_duplicate с мокированием ответа LLM."""
+    from src.llm.duplicate_verifier import check_is_duplicate
+
+    mock_resp = MagicMock()
+    mock_resp.choices = [
+        MagicMock(message=MagicMock(content='{"is_duplicate": true, "reason": "Совпадают все данные"}'))
+    ]
+
+    with patch("src.llm.duplicate_verifier.get_llm_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
+        mock_get_client.return_value = mock_client
+
+        res = await check_is_duplicate(
+            {"category": "Personal", "suggested_filename": "pass.pdf", "summary": "Паспорт"},
+            {"category": "Personal", "saved_filename": "pass.pdf", "summary": "Паспорт"}
+        )
+        assert res is True
+
+    mock_resp_false = MagicMock()
+    mock_resp_false.choices = [
+        MagicMock(message=MagicMock(content='{"is_duplicate": false, "reason": "Разные владельцы"}'))
+    ]
+    with patch("src.llm.duplicate_verifier.get_llm_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_resp_false)
+        mock_get_client.return_value = mock_client
+
+        res = await check_is_duplicate(
+            {"category": "Personal", "suggested_filename": "pass.pdf", "summary": "Паспорт Ивана"},
+            {"category": "Personal", "saved_filename": "pass.pdf", "summary": "Паспорт Марии"}
+        )
+        assert res is False
