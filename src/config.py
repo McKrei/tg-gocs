@@ -65,6 +65,7 @@ class StorageConfig(BaseSettings):
     local_storage_dir: str = Field("data/documents", alias="LOCAL_STORAGE_DIR")
     temp_dir: str = Field("data/temp", alias="TEMP_DIR")
     gdrive_credentials_path: str = Field("data/credentials.json", alias="GDRIVE_CREDENTIALS_PATH")
+    gdrive_token_path: str = Field("data/token.json", alias="GDRIVE_TOKEN_PATH")
     gdrive_root_folder_id: str = Field(..., alias="GDRIVE_ROOT_FOLDER_ID")
     max_file_size_mb: int = Field(50, alias="MAX_FILE_SIZE_MB")
     rate_limit_per_minute: int = Field(10, alias="RATE_LIMIT_PER_MINUTE")

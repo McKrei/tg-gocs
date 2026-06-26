@@ -7,7 +7,7 @@ import pytest
 from googleapiclient.errors import HttpError
 from httplib2 import Response
 
-from src.drive.client import is_drive_configured
+from src.drive.client import get_drive_service, is_drive_configured
 from src.drive.uploader import upload_file, upload_file_with_status
 
 
@@ -106,3 +106,79 @@ async def test_upload_file_real(tmp_path: Path) -> None:
         print("⚠️ Интеграция с Drive настроена, но загрузка не удалась (например, из-за ограничений квоты).")
     else:
         assert link.startswith("https://")
+
+
+@pytest.mark.asyncio
+async def test_get_drive_service_oauth_success() -> None:
+    """Проверяет успешное создание клиента Google Drive через OAuth2 при наличии token.json."""
+    mock_creds_instance = MagicMock()
+    mock_creds_instance.expired = False
+
+    with (
+        patch("src.drive.client.Path.exists", side_effect=lambda: True),
+        patch(
+            "src.drive.client.Credentials.from_authorized_user_file",
+            return_value=mock_creds_instance,
+        ) as mock_oauth_from_file,
+        patch("src.drive.client.build") as mock_build,
+    ):
+        service = get_drive_service()
+        assert service is not None
+        mock_oauth_from_file.assert_called_once()
+        mock_build.assert_called_once_with("drive", "v3", credentials=mock_creds_instance)
+
+
+@pytest.mark.asyncio
+async def test_get_drive_service_oauth_refresh() -> None:
+    """Проверяет автоматическое продление токена, если он устарел."""
+    mock_creds_instance = MagicMock()
+    mock_creds_instance.expired = True
+    mock_creds_instance.refresh_token = "some_refresh_token"
+
+    mock_write_text = MagicMock()
+
+    with (
+        patch("src.drive.client.Path.exists", side_effect=lambda: True),
+        patch("src.drive.client.Credentials.from_authorized_user_file", return_value=mock_creds_instance),
+        patch("src.drive.client.Request"),
+        patch("src.drive.client.Path.write_text", mock_write_text),
+        patch("src.drive.client.build") as mock_build,
+    ):
+        service = get_drive_service()
+        assert service is not None
+        mock_creds_instance.refresh.assert_called_once()
+        mock_write_text.assert_called_once()
+        mock_build.assert_called_once_with("drive", "v3", credentials=mock_creds_instance)
+
+
+@pytest.mark.asyncio
+async def test_get_drive_service_service_account_fallback() -> None:
+    """Проверяет откат на Service Account, если token.json не существует."""
+    mock_sa_creds = MagicMock()
+
+    def path_exists_mock(self: Path) -> bool:
+        return "token.json" not in str(self)
+
+    with (
+        patch("src.drive.client.Path.exists", path_exists_mock),
+        patch(
+            "src.drive.client.service_account.Credentials.from_service_account_file",
+            return_value=mock_sa_creds,
+        ) as mock_sa_from_file,
+        patch("src.drive.client.build") as mock_build,
+    ):
+        service = get_drive_service()
+        assert service is not None
+        mock_sa_from_file.assert_called_once()
+        mock_build.assert_called_once_with("drive", "v3", credentials=mock_sa_creds)
+
+
+@pytest.mark.asyncio
+async def test_get_drive_service_no_creds_error() -> None:
+    """Проверяет выброс FileNotFoundError, если нет никаких файлов для авторизации."""
+    with (
+        patch("src.drive.client.Path.exists", return_value=False),
+        pytest.raises(FileNotFoundError),
+    ):
+        get_drive_service()
+
