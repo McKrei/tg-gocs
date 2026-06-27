@@ -7,11 +7,11 @@ from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
+from src.core.agent.registry import registry
 from src.core.config import settings
 from src.core.llm.client import get_llm_client
 from src.core.utils.logger import get_logger
 from src.core.utils.retry import with_retry
-from src.modules.documents.tools import CLASSIFY_TOOLS_MAP, CLASSIFY_TOOLS_SCHEMA, TOOLS_MAP, TOOLS_SCHEMA
 
 logger = get_logger(__name__)
 
@@ -145,8 +145,8 @@ async def classify_document(
     temp_filepath: str, classify_only: bool = False, structure_info: str | None = None
 ) -> dict[str, Any]:
     """Проводит мультимодальный анализ документа. При classify_only=True использует только read-only инструменты."""
-    active_tools_map = CLASSIFY_TOOLS_MAP if classify_only else TOOLS_MAP
-    active_tools_schema = CLASSIFY_TOOLS_SCHEMA if classify_only else TOOLS_SCHEMA
+    active_tools_map = registry.get_tools_map("classify" if classify_only else "full")
+    active_tools_schema = registry.get_tools_schema("classify" if classify_only else "full")
     file_path = Path(temp_filepath)
     suffix = file_path.suffix.lower()
     base64_data = encode_file(temp_filepath)

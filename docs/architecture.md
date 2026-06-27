@@ -10,38 +10,49 @@ Telegram-бот (агент) для семейного хранения доку
 
 ```
 src/
-├── config.py              # Pydantic Settings: BotConfig, LLMConfig, DBConfig, StorageConfig
-├── bot/
-│   ├── main.py            # Точка входа: Bot + Dispatcher + регистрация роутеров
-│   ├── states.py          # FSM: DocumentProcessingStates, InboxStates
-│   ├── keyboards.py       # Inline-клавиатуры (confirm, cancel, inbox, duplicate)
-│   └── handlers/
-│       ├── commands.py    # /start /add /search /cancel /reset /help /list /stats /sync /inbox
-│       ├── files.py       # Приём фото/PDF: rate limiting, size check, накопление батча
-│       ├── callbacks.py   # Обработка inline-кнопок: сохранить / отменить / удалить
-│       ├── text.py        # Текстовые поправки к черновику (в состоянии confirming)
-│       ├── search.py      # Семантический поиск + LLM re-ranking (в состоянии waiting_query)
-│       └── inbox.py       # Inbox-флоу: обход очереди файлов из Drive, confirm/skip/replace
-├── agent/
-│   ├── agent.py           # Оркестратор: Vision → tool calls → JSON-метаданные
-│   └── tools.py           # Инструменты агента + TOOLS_MAP / CLASSIFY_TOOLS_MAP
-├── llm/
-│   ├── client.py          # AsyncOpenAI клиент для OpenRouter (timeout=30s)
-│   ├── embeddings.py      # get_embedding() через /embeddings endpoint
-│   ├── refiner.py         # refine_draft() — корректировка черновика по фидбеку
-│   └── duplicate_verifier.py  # check_is_duplicate() — LLM-проверка на дубль
-├── db/
-│   ├── models.py          # SQLAlchemy модель таблицы documents
-│   ├── engine.py          # async_engine, async_session (aiosqlite + sqlite-vec)
-│   └── repository.py      # CRUD + KNN-поиск + get_recent + get_stats_by_category
-├── drive/
-│   ├── client.py          # get_drive_service(), OAuth2/Service Account; list/download/delete
-│   └── uploader.py        # upload_file_with_status() с retry и graceful degradation
-├── services/
-│   └── sync.py            # sync_drive_to_db(), get_inbox_files(), process_inbox_file()
-└── utils/
-    ├── logger.py          # get_logger() — структурированное логирование
-    └── retry.py           # @with_retry(attempts, backoff) декоратор для async функций
+├── core/
+│   ├── config.py              # Pydantic Settings: BotConfig, LLMConfig, DBConfig, StorageConfig
+│   ├── db/
+│   │   ├── engine.py          # async_engine, async_session (aiosqlite + sqlite-vec)
+│   │   └── base.py            # Base для SQLAlchemy-моделей
+│   ├── agent/
+│   │   └── registry.py        # ToolRegistry & @register_tool декоратор
+│   ├── llm/
+│   │   ├── client.py          # AsyncOpenAI клиент для OpenRouter (timeout=30s)
+│   │   └── embeddings.py      # get_embedding() через /embeddings endpoint
+│   ├── drive/
+│   │   ├── client.py          # get_drive_service(), OAuth2/Service Account; list/download/delete
+│   │   ├── uploader.py        # upload_file_with_status() с retry, кэшем папок и graceful degradation
+│   │   └── cache.py           # FolderCache (in-memory кэш ID папок Drive с TTL 24ч)
+│   └── utils/
+│       ├── logger.py          # get_logger() — структурированное логирование
+│       ├── retry.py           # @with_retry(attempts, backoff) декоратор для async функций
+│       └── image.py           # compress_image() — сжатие изображений перед анализом
+├── modules/
+│   └── documents/
+│       ├── __init__.py        # register_module() -> Router + фоновые задачи
+│       ├── handlers/
+│       │   ├── commands.py    # /start /add /search /cancel /reset /help /list /stats /sync /inbox
+│       │   ├── files.py       # Приём фото/PDF: rate limiting, size check, накопление батча, сжатие фото
+│       │   ├── callbacks.py   # Обработка inline-кнопок: сохранить / отменить / удалить
+│       │   ├── text.py        # Текстовые поправки к черновику (в состоянии confirming)
+│       │   ├── search.py      # Семантический поиск + LLM re-ranking (в состоянии waiting_query)
+│       │   └── inbox.py       # Inbox-флоу: обход очереди файлов из Drive, confirm/skip/replace
+│       ├── models.py          # SQLAlchemy-модели: Document, PendingUpload
+│       ├── repository.py      # CRUD + KNN-поиск + get_recent + get_stats_by_category
+│       ├── tools.py           # Инструменты агента, декорированные @register_tool
+│       ├── states.py          # FSM: DocumentProcessingStates, InboxStates
+│       ├── keyboards.py       # Inline-клавиатуры (confirm, cancel, inbox, duplicate)
+│       ├── agent.py           # Оркестратор: Vision → tool calls → JSON-метаданные
+│       └── services/
+│           ├── sync.py        # sync_drive_to_db(), get_inbox_files(), process_inbox_file()
+│           ├── retry_uploads.py # Фоновая служба повторной загрузки локальных файлов в Drive
+│           ├── refiner.py     # refine_draft() — корректировка черновика по фидбеку
+│           └── duplicate_verifier.py # check_is_duplicate() — LLM-проверка на дубль
+└── bot/
+    ├── main.py                # Точка входа: Bot + Dispatcher + авторегистрация модулей
+    └── middleware/
+        └── auth.py            # Middleware авторизации по Telegram User ID
 ```
 
 ---
@@ -235,3 +246,15 @@ make up               # docker-compose up --build -d
 make down             # docker-compose down
 make clean            # очистка кэшей (__pycache__, .ruff_cache и т.д.)
 ```
+
+---
+
+## Динамический реестр инструментов (Tool Registry)
+
+Для расширения возможностей ИИ-агента без изменения ядра оркестратора используется динамический реестр инструментов:
+- **Декоратор `@register_tool`** (в `src/core/agent/registry.py`) регистрирует функции в глобальном реестре ИИ-агента и автоматически генерирует для них JSON-схему на основе аннотаций типов параметров и docstring.
+- При запуске бота метод `discover_tools()` сканирует директорию `src/modules/*/tools.py`, автоматически импортирует файлы и регистрирует содержащиеся в них функции как инструменты.
+- Поддерживается разделение инструментов по режимам доступа (параметр `mode`):
+  - `classify` — только read-only инструменты (доступные при предварительном разборе и обходе inbox).
+  - `full` — все инструменты, включая модифицирующие файловую систему и базу данных.
+

@@ -235,10 +235,10 @@ async def test_classify_document_orchestrator(tmp_path: Path, monkeypatch: pytes
         mock_client.chat.completions.create = AsyncMock(side_effect=[mock_resp_step1, mock_resp_step2])
         mock_get_client.return_value = mock_client
 
-        # Мокаем сам инструмент
+        # Мокаем сам инструмент через registry
         with patch(
-            "src.modules.documents.agent.TOOLS_MAP",
-            {"get_directory_tree": AsyncMock(return_value="Дерево директорий")},
+            "src.modules.documents.agent.registry.get_tools_map",
+            return_value={"get_directory_tree": AsyncMock(return_value="Дерево директорий")},
         ):
             result = await classify_document(str(test_img))
 

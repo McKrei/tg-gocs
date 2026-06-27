@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from src.core.agent.registry import register_tool
 from src.core.config import settings
 from src.core.db.engine import async_session
 from src.core.drive.uploader import upload_file_with_status
@@ -16,6 +17,7 @@ from src.modules.documents.repository import DocumentRepository
 logger = get_logger(__name__)
 
 
+@register_tool(mode="classify")
 async def get_directory_tree(path_prefix: str = "") -> str:
     """Возвращает дерево директорий в локальном хранилище документов в виде текста."""
     if not settings.storage.local_storage_enabled:
@@ -216,6 +218,7 @@ async def find_similar_document(category: str, filename: str, summary: str) -> d
     return None
 
 
+@register_tool(mode="full")
 async def create_directory(path: str) -> bool:
     """Создает директорию локально. Возвращает True в случае успеха."""
     try:
@@ -267,6 +270,7 @@ async def merge_files_to_pdf(file_paths: list[str], output_path: str) -> None:
     await asyncio.to_thread(_merge)
 
 
+@register_tool(mode="full")
 async def convert_to_pdf(temp_file_ids: list[str], output_filename: str) -> str:
     """Конвертирует список временных файлов в один PDF-файл. Возвращает путь к нему."""
     temp_dir = Path(settings.storage.temp_dir)
@@ -276,6 +280,7 @@ async def convert_to_pdf(temp_file_ids: list[str], output_filename: str) -> str:
     return str(output_path)
 
 
+@register_tool(mode="full")
 async def save_to_local_and_drive(temp_filepath: str, target_path: str) -> dict[str, str | None]:
     """Выгружает файл на Google Drive. Локально сохраняет только если включён LOCAL_STORAGE_DIR."""
     temp_path = Path(temp_filepath)
@@ -310,6 +315,7 @@ async def save_to_local_and_drive(temp_filepath: str, target_path: str) -> dict[
     }
 
 
+@register_tool(mode="classify")
 async def vector_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
     """Выполняет векторный поиск KNN по базе данных документов на основе эмбеддинга запроса."""
     query_emb = await get_embedding(query)
@@ -334,121 +340,3 @@ async def vector_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
             )
         return output
 
-
-# Карта доступных функций-инструментов для вызова
-TOOLS_MAP: dict[str, Any] = {
-    "get_directory_tree": get_directory_tree,
-    "create_directory": create_directory,
-    "convert_to_pdf": convert_to_pdf,
-    "save_to_local_and_drive": save_to_local_and_drive,
-    "vector_search": vector_search,
-}
-
-# Описание инструментов для передачи в OpenAI/OpenRouter API
-TOOLS_SCHEMA: Any = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_directory_tree",
-            "description": "Возвращает дерево папок документов для определения существующих категорий.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path_prefix": {
-                        "type": "string",
-                        "description": "Префикс пути для обхода дерева директорий (по умолчанию корень).",
-                    }
-                },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_directory",
-            "description": "Создает новую папку в хранилище документов (локально).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Относительный путь к новой директории (например: 'Медицина/Жена').",
-                    }
-                },
-                "required": ["path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "convert_to_pdf",
-            "description": "Склеивает и конвертирует список временных файлов изображений в один PDF-документ.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "temp_file_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Список имен файлов во временной папке (например: ['page1.jpg', 'page2.png']).",
-                    },
-                    "output_filename": {
-                        "type": "string",
-                        "description": "Имя итогового PDF-файла (например: 'document.pdf').",
-                    },
-                },
-                "required": ["temp_file_ids", "output_filename"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "save_to_local_and_drive",
-            "description": "Сохраняет временный файл в конечную директорию документов (локально и в Google Drive).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "temp_filepath": {
-                        "type": "string",
-                        "description": "Абсолютный или относительный путь к временному файлу (источник).",
-                    },
-                    "target_path": {
-                        "type": "string",
-                        "description": "Относительный путь для сохранения, включая категорию и имя файла (назначение).",
-                    },
-                },
-                "required": ["temp_filepath", "target_path"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "vector_search",
-            "description": "Выполняет семантический поиск по ранее сохраненным документам по текстовому запросу.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Текст поискового запроса (например: 'паспорт жены').",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Максимальное количество возвращаемых результатов.",
-                    },
-                },
-                "required": ["query"],
-            },
-        },
-    },
-]
-
-# Только read-only инструменты — для режима классификации без сохранения (sync, inbox)
-CLASSIFY_TOOLS_MAP: dict[str, Any] = {
-    "get_directory_tree": get_directory_tree,
-    "vector_search": vector_search,
-}
-
-CLASSIFY_TOOLS_SCHEMA: Any = [tool for tool in TOOLS_SCHEMA if tool["function"]["name"] in CLASSIFY_TOOLS_MAP]
