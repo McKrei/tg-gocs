@@ -222,7 +222,10 @@ async def test_cmd_list_with_items() -> None:
     mock_doc.created_at.strftime = MagicMock(return_value="26.06.2026")
     mock_doc.gdrive_link = "https://drive.google.com/doc"
 
-    with patch("src.modules.documents.handlers.commands.async_session") as mock_session_maker:
+    with (
+        patch("src.core.db.engine.async_session") as mock_session_maker,
+        patch("src.core.drive.uploader.find_folder_by_path", AsyncMock(return_value="mock_folder_id")),
+    ):
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
 

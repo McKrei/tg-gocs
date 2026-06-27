@@ -89,6 +89,7 @@ async def test_flow_save_end_to_end() -> None:
     with (
         patch("src.modules.documents.handlers.callbacks.classify_document", AsyncMock(return_value=mock_draft)),
         patch("src.modules.documents.handlers.callbacks.merge_files_to_pdf", AsyncMock()),
+        patch("src.modules.documents.handlers.callbacks.find_similar_document", AsyncMock(return_value=None)),
     ):
         await handle_start_analysis(callback_start, bot, state)
 
