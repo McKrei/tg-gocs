@@ -141,7 +141,9 @@ def normalize_draft_metadata(
 
 
 @with_retry(attempts=3, initial_delay=1.0)
-async def classify_document(temp_filepath: str, classify_only: bool = False) -> dict[str, Any]:
+async def classify_document(
+    temp_filepath: str, classify_only: bool = False, structure_info: str | None = None
+) -> dict[str, Any]:
     """Проводит мультимодальный анализ документа. При classify_only=True использует только read-only инструменты."""
     active_tools_map = CLASSIFY_TOOLS_MAP if classify_only else TOOLS_MAP
     active_tools_schema = CLASSIFY_TOOLS_SCHEMA if classify_only else TOOLS_SCHEMA
@@ -165,9 +167,9 @@ async def classify_document(temp_filepath: str, classify_only: bool = False) -> 
             "image_url": {"url": f"data:{mime_type};base64,{base64_data}"},
         }
 
-    from src.agent.tools import get_existing_structure
-
-    structure_info = await get_existing_structure()
+    if structure_info is None:
+        from src.agent.tools import get_existing_structure
+        structure_info = await get_existing_structure()
 
     messages: list[dict[str, Any]] = [
         {

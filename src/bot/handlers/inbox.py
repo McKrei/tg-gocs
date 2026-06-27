@@ -71,13 +71,14 @@ async def _show_next_inbox_file(message: types.Message, state: FSMContext) -> No
     status_msg = await message.answer(f"⏳ Анализирую файл {inbox_file.name}...")
 
     try:
+        from src.agent.tools import get_existing_structure, get_flat_directory_list
+        from src.db.engine import async_session
+        from src.db.repository import DocumentRepository
         from src.services.sync import _download_to_temp
 
         temp_path = await _download_to_temp(inbox_file.drive_id, inbox_file.name, inbox_file.mime_type)
-        draft = await classify_document(str(temp_path), classify_only=True)
-        from src.agent.tools import get_flat_directory_list
-        from src.db.engine import async_session
-        from src.db.repository import DocumentRepository
+        structure_info = await get_existing_structure()
+        draft = await classify_document(str(temp_path), classify_only=True, structure_info=structure_info)
         flat_dirs = get_flat_directory_list()
         categories = []
         try:

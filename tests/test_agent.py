@@ -369,8 +369,8 @@ async def test_find_similar_document(db_session: AsyncSession, monkeypatch: pyte
 
 
 @pytest.mark.asyncio
-async def test_find_similar_document_not_duplicate(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Проверяет, что если LLM считает документы разными, похожий документ не возвращается."""
+async def test_find_similar_document_by_distance(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Проверяет логику поиска дубликатов по расстояниям."""
     monkeypatch.setattr("src.agent.tools.async_session", lambda: db_session)
 
     from src.db.repository import DocumentRepository
@@ -387,9 +387,16 @@ async def test_find_similar_document_not_duplicate(db_session: AsyncSession, mon
     )
     await db_session.commit()
 
-    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)), \
-         patch("src.llm.duplicate_verifier.check_is_duplicate", AsyncMock(return_value=False)):
+    # 1. Расстояние < 0.10 (0.001 разница по каждому измерению -> расстояние ~0.0277) -> дубликат автоматически
+    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)):
         res_semantic = await find_similar_document("Other", "passport.pdf", "Похожее описание")
+        assert res_semantic is not None
+        assert res_semantic["saved_filename"] == "pass.pdf"
+
+    # 2. Расстояние >= 0.20 (разнонаправленные вектора -> косинусное расстояние ~1.0) -> не дубликат (unique)
+    diff_emb = [-0.1 if i % 2 == 0 else 0.1 for i in range(768)]
+    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=diff_emb)):
+        res_semantic = await find_similar_document("Other", "passport.pdf", "Другое описание")
         assert res_semantic is None
 
 

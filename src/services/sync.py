@@ -69,10 +69,10 @@ async def _download_to_temp(drive_id: str, name: str, mime_type: str) -> Path:
     return dest
 
 
-async def _index_file(temp_path: Path, drive_link: str, original_name: str) -> bool:
+async def _index_file(temp_path: Path, drive_link: str, original_name: str, structure_info: str | None = None) -> bool:
     """Классифицирует файл и добавляет его в БД. Возвращает True при успехе."""
     try:
-        draft = await classify_document(str(temp_path), classify_only=True)
+        draft = await classify_document(str(temp_path), classify_only=True, structure_info=structure_info)
         draft = normalize_draft_metadata(draft, temp_path.suffix)
         embedding = await get_embedding(draft["summary"])
 
@@ -144,6 +144,9 @@ async def sync_drive_to_db() -> SyncResult:
 
     logger.info(f"Уже проиндексировано: {len(indexed_links)} файлов")
 
+    from src.agent.tools import get_existing_structure
+    structure_info = await get_existing_structure()
+
     for file_info in drive_files:
         web_link = file_info["webViewLink"]
         name = file_info["name"]
@@ -155,7 +158,7 @@ async def sync_drive_to_db() -> SyncResult:
         temp_path: Path | None = None
         try:
             temp_path = await _download_to_temp(file_info["id"], name, file_info["mimeType"])
-            ok = await _index_file(temp_path, web_link, name)
+            ok = await _index_file(temp_path, web_link, name, structure_info=structure_info)
             if ok:
                 result.added += 1
             else:

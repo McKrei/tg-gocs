@@ -1,3 +1,4 @@
+import asyncio
 import html
 import time
 import uuid
@@ -55,9 +56,9 @@ async def _persist_document(
     draft: dict[str, Any],
     save_result: dict[str, Any],
     suggested_filename: str,
+    embedding: Any,
 ) -> None:
     """Сохраняет документ и эмбеддинг в БД."""
-    embedding = await get_embedding(draft["summary"])
     async with async_session() as session:
         repo = DocumentRepository(session)
         await repo.add_document(
@@ -109,18 +110,27 @@ async def handle_start_analysis(callback: types.CallbackQuery, bot: Bot, state: 
         await state.clear()
         return
 
-    await callback.answer("Объединяю файлы и анализирую...")
+    await callback.answer("Запускаю анализ...")
     if isinstance(callback.message, types.Message):
-        await callback.message.edit_text("⏳ Объединяю файлы и анализирую, пожалуйста, подождите...", reply_markup=None)
+        await callback.message.edit_text("⏳ Подготавливаю файлы...", reply_markup=None)
+
+    from src.agent.tools import get_existing_structure
+
+    async def _prepare_files() -> Path:
+        if len(files) == 1:
+            return Path(files[0])
+        temp_dir = Path(settings.storage.temp_dir)
+        merged_filename = f"merged_{uuid.uuid4()}.pdf"
+        merged_path = temp_dir / merged_filename
+        await merge_files_to_pdf(files, str(merged_path))
+        return merged_path
 
     try:
-        if len(files) == 1:
-            merged_path = Path(files[0])
-        else:
-            temp_dir = Path(settings.storage.temp_dir)
-            merged_filename = f"merged_{uuid.uuid4()}.pdf"
-            merged_path = temp_dir / merged_filename
-            await merge_files_to_pdf(files, str(merged_path))
+        # Параллельно готовим/склеиваем файлы и собираем структуру папок
+        merged_path, structure_info = await asyncio.gather(
+            _prepare_files(),
+            get_existing_structure()
+        )
     except Exception as e:
         logger.error(f"Ошибка при обработке файлов: {e}")
         if isinstance(callback.message, types.Message):
@@ -129,8 +139,11 @@ async def handle_start_analysis(callback: types.CallbackQuery, bot: Bot, state: 
         await state.clear()
         return
 
+    if isinstance(callback.message, types.Message):
+        await callback.message.edit_text("🔍 Анализирую документ...", reply_markup=None)
+
     try:
-        draft = await classify_document(str(merged_path), classify_only=True)
+        draft = await classify_document(str(merged_path), classify_only=True, structure_info=structure_info)
     except Exception as e:
         logger.error(f"Ошибка классификации: {e}")
         draft = {
@@ -139,6 +152,9 @@ async def handle_start_analysis(callback: types.CallbackQuery, bot: Bot, state: 
             "summary": "Не удалось проанализировать документ.",
             "owner": "Неизвестно",
         }
+
+    if isinstance(callback.message, types.Message):
+        await callback.message.edit_text("📂 Определяю категорию и проверяю дубликаты...", reply_markup=None)
 
     from src.agent.tools import get_flat_directory_list
     flat_dirs = get_flat_directory_list()
@@ -200,8 +216,12 @@ async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FS
     final_temp_path = None
     try:
         final_temp_path = await _prepare_file_for_save(files, suggested_filename)
-        save_result = await save_to_local_and_drive(final_temp_path, target_path)
-        await _persist_document(draft, save_result, suggested_filename)
+        # Запускаем сохранение в Drive и получение эмбеддинга параллельно
+        save_result, embedding = await asyncio.gather(
+            save_to_local_and_drive(final_temp_path, target_path),
+            get_embedding(draft["summary"])
+        )
+        await _persist_document(draft, save_result, suggested_filename, embedding)
 
         gdrive_text = _format_gdrive_result(save_result, target_path)
         if isinstance(callback.message, types.Message):
@@ -243,8 +263,12 @@ async def handle_replace_save(callback: types.CallbackQuery, bot: Bot, state: FS
     final_temp_path = None
     try:
         final_temp_path = await _prepare_file_for_save(files, suggested_filename)
-        save_result = await save_to_local_and_drive(final_temp_path, target_path)
-        await _persist_document(draft, save_result, suggested_filename)
+        # Запускаем сохранение в Drive и получение эмбеддинга параллельно
+        save_result, embedding = await asyncio.gather(
+            save_to_local_and_drive(final_temp_path, target_path),
+            get_embedding(draft["summary"])
+        )
+        await _persist_document(draft, save_result, suggested_filename, embedding)
 
         gdrive_text = _format_gdrive_result(save_result, target_path)
         if isinstance(callback.message, types.Message):
