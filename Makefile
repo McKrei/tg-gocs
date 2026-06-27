@@ -28,6 +28,8 @@ format:
 
 # Запуск контейнера в Docker Compose
 up:
+	docker compose down --remove-orphans || true
+	docker rm -f tg-gocs-bot || true
 	docker compose up --build -d
 
 # Остановка контейнера Docker Compose
