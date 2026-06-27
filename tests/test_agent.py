@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from src.core.db.base import Base
 from src.core.llm.embeddings import get_embedding
-from src.modules.documents.agent import classify_document, normalize_draft_metadata
+from src.modules.documents.agent import classify_document, normalize_draft_metadata, parse_json_content
 from src.modules.documents.models import Document, PendingUpload  # noqa: F401
 from src.modules.documents.tools import (
     convert_to_pdf,
@@ -246,6 +246,20 @@ async def test_classify_document_orchestrator(tmp_path: Path, monkeypatch: pytes
             assert result["suggested_filename"] == "Polis.pdf"
             assert result["owner"] == "Жена"
             assert mock_client.chat.completions.create.call_count == 2
+
+
+def test_parse_json_content_with_truncated_json() -> None:
+    """Проверяет, что parse_json_content корректно восстанавливает и парсит усеченный JSON."""
+    truncated = (
+        '{\n'
+        '  "category": "Личные документы/Общие",\n'
+        '  "suggested_filename": "2026-06-23 Чек с покупки в магазине.jpg",\n'
+        '  "summary": "Чек с покупки в магазине. Номер чека: 00000000000'
+    )
+    result = parse_json_content(truncated)
+    assert result["category"] == "Личные документы/Общие"
+    assert result["suggested_filename"] == "2026-06-23 Чек с покупки в магазине.jpg"
+    assert "00000" in result["summary"]
 
 
 def test_normalize_draft_metadata_uses_document_date_from_summary() -> None:

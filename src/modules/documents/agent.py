@@ -7,6 +7,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any, cast
 
+from json_repair import repair_json
+
 from src.core.agent.registry import registry
 from src.core.config import settings
 from src.core.llm.client import get_llm_client
@@ -49,7 +51,7 @@ def encode_file(file_path: str) -> str:
 
 
 def parse_json_content(content: str) -> dict[str, Any]:
-    """Пытается безопасно распарсить JSON-объект из текстового ответа модели."""
+    """Пытается безопасно распарсить JSON-объект из текстового ответа модели с автовосстановлением."""
     cleaned = content.strip()
     # Убираем возможные markdown обертки для кода (```json ... ```)
     if cleaned.startswith("```"):
@@ -59,15 +61,21 @@ def parse_json_content(content: str) -> dict[str, Any]:
 
     try:
         return cast(dict[str, Any], json.loads(cleaned))
-    except json.JSONDecodeError as e:
-        # Пробуем найти первую '{' и последнюю '}'
-        match = re.search(r"(\{.*\})", cleaned, re.DOTALL)
-        if match:
-            try:
-                return cast(dict[str, Any], json.loads(match.group(1)))
-            except json.JSONDecodeError as e_inner:
-                raise ValueError(f"Не удалось распарсить извлеченный JSON: {match.group(1)}") from e_inner
-        raise ValueError(f"Ответ модели не содержит валидного JSON: {content}") from e
+    except json.JSONDecodeError:
+        # Если стандартный парсер упал, используем json-repair
+        try:
+            repaired = repair_json(cleaned)
+            return cast(dict[str, Any], json.loads(repaired))
+        except Exception as e_repair:
+            # На всякий случай пробуем вырезать подстроку от первой '{' до конца и починить её
+            match = re.search(r"(\{.*)", cleaned, re.DOTALL)
+            if match:
+                try:
+                    repaired = repair_json(match.group(1))
+                    return cast(dict[str, Any], json.loads(repaired))
+                except Exception as e_inner:
+                    raise ValueError(f"Не удалось распарсить и восстановить JSON: {match.group(1)}") from e_inner
+            raise ValueError(f"Ответ модели не содержит валидного JSON: {content}") from e_repair
 
 
 def _build_date(year: str, month: str | int, day: str) -> str | None:
@@ -207,7 +215,11 @@ async def classify_document(
                 "адреса, сроки действия, суммы, идентификаторы и любые другие поля, по которым "
                 "пользователь может потом искать документ. "
                 "Поле summary должно быть подробным, но без выдумок: перечисли только то, "
-                "что реально видно. "
+                "что реально видно. ВАЖНО: никогда не перечисляй длинные технические идентификаторы "
+                "или длинные цепочки нулей (например, в штрихкодах или номерах чеков) целиком. "
+                "Если они длиннее 10 символов, сокращай их (например, пиши первые несколько цифр и далее '...' "
+                "или количество нулей, например '0... (20 нулей)'), чтобы избежать зависания и "
+                "обрезания JSON-ответа.\n"
                 "Имя файла пиши на русском языке. Оно должно начинаться с даты в формате YYYY-MM-DD: "
                 "если в документе есть дата документа, регистрации или выдачи — используй её; "
                 "если даты нет — используй сегодняшнюю дату. После даты добавь короткое понятное название. "
