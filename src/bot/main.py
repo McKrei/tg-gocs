@@ -4,11 +4,11 @@ from typing import Any
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from src.bot.handlers import callbacks, commands, files, inbox, search, text
 from src.bot.middleware.auth import AuthMiddleware
-from src.config import settings
-from src.db.engine import init_db
-from src.utils.logger import get_logger
+from src.core.config import settings
+from src.core.db.engine import init_db
+from src.core.utils.logger import get_logger
+from src.modules.documents.handlers import callbacks, commands, files, inbox, search, text
 
 logger = get_logger(__name__)
 
@@ -34,7 +34,7 @@ async def main() -> None:
     await init_db()
     
     # Запускаем фоновую задачу ретраев отложенных выгрузок в Drive
-    from src.services.retry_uploads import start_retry_uploads_loop
+    from src.modules.documents.services.retry_uploads import start_retry_uploads_loop
     task = asyncio.create_task(start_retry_uploads_loop())
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)

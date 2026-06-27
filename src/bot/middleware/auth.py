@@ -4,8 +4,8 @@ from typing import Any
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
 
-from src.config import settings
-from src.utils.logger import get_logger
+from src.core.config import settings
+from src.core.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

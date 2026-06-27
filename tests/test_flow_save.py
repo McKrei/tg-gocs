@@ -5,15 +5,15 @@ import pytest
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 
-from src.bot.handlers.callbacks import (
+from src.modules.documents.handlers.callbacks import (
     handle_cancel_save,
     handle_confirm_save,
     handle_replace_save,
     handle_start_analysis,
 )
-from src.bot.handlers.files import handle_photo
-from src.bot.handlers.text import handle_refinement
-from src.bot.states import DocumentProcessingStates
+from src.modules.documents.handlers.files import handle_photo
+from src.modules.documents.handlers.text import handle_refinement
+from src.modules.documents.states import DocumentProcessingStates
 
 
 @pytest.mark.asyncio
@@ -87,8 +87,8 @@ async def test_flow_save_end_to_end() -> None:
     }
 
     with (
-        patch("src.bot.handlers.callbacks.classify_document", AsyncMock(return_value=mock_draft)),
-        patch("src.bot.handlers.callbacks.merge_files_to_pdf", AsyncMock()),
+        patch("src.modules.documents.handlers.callbacks.classify_document", AsyncMock(return_value=mock_draft)),
+        patch("src.modules.documents.handlers.callbacks.merge_files_to_pdf", AsyncMock()),
     ):
         await handle_start_analysis(callback_start, bot, state)
 
@@ -113,7 +113,7 @@ async def test_flow_save_end_to_end() -> None:
 
     bot.edit_message_text.reset_mock()
 
-    with patch("src.bot.handlers.text.refine_draft", AsyncMock(return_value=refined_draft)):
+    with patch("src.modules.documents.handlers.text.refine_draft", AsyncMock(return_value=refined_draft)):
         await handle_refinement(message_text, bot, state)
 
         assert fsm_data["draft"] == refined_draft
@@ -134,15 +134,15 @@ async def test_flow_save_end_to_end() -> None:
     }
 
     with (
-        patch("src.bot.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
-        patch("src.bot.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
-        patch("src.bot.handlers.callbacks.async_session") as mock_session_maker,
-        patch("src.bot.handlers.callbacks._cleanup_files") as mock_cleanup,
+        patch("src.modules.documents.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
+        patch("src.modules.documents.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
+        patch("src.modules.documents.handlers.callbacks.async_session") as mock_session_maker,
+        patch("src.modules.documents.handlers.callbacks._cleanup_files") as mock_cleanup,
     ):
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
 
-        with patch("src.bot.handlers.callbacks.DocumentRepository") as mock_repo_class:
+        with patch("src.modules.documents.handlers.callbacks.DocumentRepository") as mock_repo_class:
             mock_repo = MagicMock()
             mock_repo.add_document = AsyncMock()
             mock_repo_class.return_value = mock_repo
@@ -170,7 +170,7 @@ async def test_flow_cancel() -> None:
     state.get_data = AsyncMock(return_value=fsm_data)
     state.clear = AsyncMock()
 
-    with patch("src.bot.handlers.callbacks._cleanup_files") as mock_cleanup:
+    with patch("src.modules.documents.handlers.callbacks._cleanup_files") as mock_cleanup:
         await handle_cancel_save(callback, state)
 
         mock_cleanup.assert_called_once_with(["file1.jpg"])
@@ -211,26 +211,26 @@ async def test_flow_replace_save() -> None:
 
     import uuid
 
-    from src.db.models import Document
+    from src.modules.documents.models import Document
 
     mock_old_doc = MagicMock(spec=Document)
     mock_old_doc.local_path = "data/documents/Медицина/polis_old.jpg"
     mock_old_doc.gdrive_link = "https://drive.google.com/file/d/old_gdrive_id/view"
 
     with (
-        patch("src.bot.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
-        patch("src.bot.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
-        patch("src.bot.handlers.callbacks.async_session") as mock_session_maker,
-        patch("src.bot.handlers.callbacks.delete_file_from_drive", AsyncMock()) as mock_del_drive,
-        patch("src.bot.handlers.callbacks.extract_gdrive_file_id", return_value="old_gdrive_id"),
-        patch("src.bot.handlers.callbacks._cleanup_files") as mock_cleanup,
+        patch("src.modules.documents.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
+        patch("src.modules.documents.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
+        patch("src.modules.documents.handlers.callbacks.async_session") as mock_session_maker,
+        patch("src.modules.documents.handlers.callbacks.delete_file_from_drive", AsyncMock()) as mock_del_drive,
+        patch("src.modules.documents.handlers.callbacks.extract_gdrive_file_id", return_value="old_gdrive_id"),
+        patch("src.modules.documents.handlers.callbacks._cleanup_files") as mock_cleanup,
         patch("pathlib.Path.exists", return_value=True),
         patch("pathlib.Path.unlink", MagicMock()) as mock_unlink,
     ):
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
 
-        with patch("src.bot.handlers.callbacks.DocumentRepository") as mock_repo_class:
+        with patch("src.modules.documents.handlers.callbacks.DocumentRepository") as mock_repo_class:
             mock_repo = MagicMock()
             mock_repo.get_document = AsyncMock(return_value=mock_old_doc)
             mock_repo.delete_document = AsyncMock(return_value=True)

@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from PIL import Image
 
-from src.drive.cache import FolderCache
-from src.utils.image import compress_image
+from src.core.drive.cache import FolderCache
+from src.core.utils.image import compress_image
 
 
 def test_folder_cache() -> None:
@@ -64,8 +64,8 @@ async def test_retry_pending_uploads(monkeypatch: pytest.MonkeyPatch) -> None:
     """Проверяет фоновую задачу повтора загрузки отложенных файлов."""
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from src.db.repository import DocumentRepository
-    from src.services.retry_uploads import retry_pending_uploads_once
+    from src.modules.documents.repository import DocumentRepository
+    from src.modules.documents.services.retry_uploads import retry_pending_uploads_once
 
     # Создаем фиктивную сессию и репозиторий через моки
     mock_session = AsyncMock(spec=AsyncSession)
@@ -83,11 +83,17 @@ async def test_retry_pending_uploads(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_repo.update_pending_upload = AsyncMock()
 
     # Мокаем фабрику сессий и репозиторий
-    monkeypatch.setattr("src.services.retry_uploads.async_session", MagicMock(return_value=mock_session))
+    monkeypatch.setattr(
+        "src.modules.documents.services.retry_uploads.async_session",
+        MagicMock(return_value=mock_session),
+    )
     
     with (
-        patch("src.services.retry_uploads.DocumentRepository", return_value=mock_repo),
-        patch("src.services.retry_uploads.upload_file_with_status", AsyncMock(return_value={"link": "https://drive.google.com/file_id"}))
+        patch("src.modules.documents.services.retry_uploads.DocumentRepository", return_value=mock_repo),
+        patch(
+            "src.modules.documents.services.retry_uploads.upload_file_with_status",
+            AsyncMock(return_value={"link": "https://drive.google.com/file_id"}),
+        ),
     ):
         await retry_pending_uploads_once()
 

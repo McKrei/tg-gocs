@@ -2,12 +2,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.bot.handlers.commands import cmd_add, cmd_cancel, cmd_help, cmd_list, cmd_search, cmd_start, cmd_stats
-from src.bot.handlers.files import handle_document, handle_file_without_add, handle_photo
-from src.bot.handlers.text import handle_text_while_waiting_file
 from src.bot.middleware.auth import AuthMiddleware
-from src.bot.states import DocumentProcessingStates
-from src.config import settings
+from src.core.config import settings
+from src.modules.documents.handlers.commands import (
+    cmd_add,
+    cmd_cancel,
+    cmd_help,
+    cmd_list,
+    cmd_search,
+    cmd_start,
+    cmd_stats,
+)
+from src.modules.documents.handlers.files import handle_document, handle_file_without_add, handle_photo
+from src.modules.documents.handlers.text import handle_text_while_waiting_file
+from src.modules.documents.states import DocumentProcessingStates
 
 
 @pytest.mark.asyncio
@@ -41,7 +49,7 @@ async def test_cmd_search_with_query_runs_search() -> None:
     message.text = "/search паспорт"
     state = AsyncMock()
 
-    with patch("src.bot.handlers.search._do_search", AsyncMock()) as mock_search:
+    with patch("src.modules.documents.handlers.search._do_search", AsyncMock()) as mock_search:
         await cmd_search(message, state)
 
     state.clear.assert_called_once()
@@ -119,7 +127,7 @@ async def test_handle_photo() -> None:
     bot.get_file = AsyncMock(return_value=file_info)
     bot.download = AsyncMock()
 
-    with patch("src.bot.handlers.files.settings") as mock_settings:
+    with patch("src.modules.documents.handlers.files.settings") as mock_settings:
         mock_settings.storage.temp_dir = "data/temp_test"
         mock_settings.storage.max_file_size_mb = 50
         mock_settings.storage.rate_limit_per_minute = 10
@@ -144,7 +152,7 @@ async def test_handle_document() -> None:
     message.document = doc
     bot.download = AsyncMock()
 
-    with patch("src.bot.handlers.files.settings") as mock_settings:
+    with patch("src.modules.documents.handlers.files.settings") as mock_settings:
         mock_settings.storage.temp_dir = "data/temp_test"
         mock_settings.storage.max_file_size_mb = 50
         mock_settings.storage.rate_limit_per_minute = 10
@@ -189,11 +197,11 @@ async def test_cmd_help() -> None:
 async def test_cmd_list_empty() -> None:
     """Проверяет команду /list, когда документов нет."""
     message = AsyncMock()
-    with patch("src.bot.handlers.commands.async_session") as mock_session_maker:
+    with patch("src.modules.documents.handlers.commands.async_session") as mock_session_maker:
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
 
-        with patch("src.bot.handlers.commands.DocumentRepository") as mock_repo_class:
+        with patch("src.modules.documents.handlers.commands.DocumentRepository") as mock_repo_class:
             mock_repo = MagicMock()
             mock_repo.get_recent_documents = AsyncMock(return_value=[])
             mock_repo_class.return_value = mock_repo
@@ -214,11 +222,11 @@ async def test_cmd_list_with_items() -> None:
     mock_doc.created_at.strftime = MagicMock(return_value="26.06.2026")
     mock_doc.gdrive_link = "https://drive.google.com/doc"
 
-    with patch("src.bot.handlers.commands.async_session") as mock_session_maker:
+    with patch("src.modules.documents.handlers.commands.async_session") as mock_session_maker:
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
 
-        with patch("src.bot.handlers.commands.DocumentRepository") as mock_repo_class:
+        with patch("src.modules.documents.handlers.commands.DocumentRepository") as mock_repo_class:
             mock_repo = MagicMock()
             mock_repo.get_recent_documents = AsyncMock(return_value=[mock_doc])
             mock_repo_class.return_value = mock_repo
@@ -235,7 +243,7 @@ async def test_cmd_stats() -> None:
     """Проверяет команду /stats."""
     message = AsyncMock()
 
-    with patch("src.bot.handlers.commands.async_session") as mock_session_maker:
+    with patch("src.modules.documents.handlers.commands.async_session") as mock_session_maker:
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
 
@@ -244,7 +252,7 @@ async def test_cmd_stats() -> None:
         mock_result.scalar_one = MagicMock(return_value=5)
         mock_session.execute = AsyncMock(return_value=mock_result)
 
-        with patch("src.bot.handlers.commands.DocumentRepository") as mock_repo_class:
+        with patch("src.modules.documents.handlers.commands.DocumentRepository") as mock_repo_class:
             mock_repo = MagicMock()
             mock_repo.get_stats_by_category = AsyncMock(return_value=[("Медицина", 3), ("Документы", 2)])
             mock_repo_class.return_value = mock_repo

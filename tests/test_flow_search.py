@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiogram import types
 
-from src.bot.handlers.search import _do_search, _rerank_documents, handle_search_query
+from src.modules.documents.handlers.search import _do_search, _rerank_documents, handle_search_query
 
 
 @pytest.mark.asyncio
@@ -39,7 +39,7 @@ async def test_rerank_documents_with_docs() -> None:
     mock_client = MagicMock()
     mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-    with patch("src.bot.handlers.search.get_llm_client", return_value=mock_client):
+    with patch("src.modules.documents.handlers.search.get_llm_client", return_value=mock_client):
         res = await _rerank_documents("найди полис", mock_docs)
         assert res["best_match_id"] == "11111111-1111-1111-1111-111111111111"
         assert res["explanation"] == "Документ найден."
@@ -75,8 +75,8 @@ async def test_handle_search_found(tmp_path) -> None:
     }
 
     with (
-        patch("src.bot.handlers.search.vector_search", AsyncMock(return_value=mock_search_results)),
-        patch("src.bot.handlers.search._rerank_documents", AsyncMock(return_value=mock_rerank)),
+        patch("src.modules.documents.handlers.search.vector_search", AsyncMock(return_value=mock_search_results)),
+        patch("src.modules.documents.handlers.search._rerank_documents", AsyncMock(return_value=mock_rerank)),
     ):
         message.bot = bot
         await _do_search(message.text, message)
@@ -105,8 +105,8 @@ async def test_handle_search_not_found() -> None:
     }
 
     with (
-        patch("src.bot.handlers.search.vector_search", AsyncMock(return_value=mock_search_results)),
-        patch("src.bot.handlers.search._rerank_documents", AsyncMock(return_value=mock_rerank)),
+        patch("src.modules.documents.handlers.search.vector_search", AsyncMock(return_value=mock_search_results)),
+        patch("src.modules.documents.handlers.search._rerank_documents", AsyncMock(return_value=mock_rerank)),
     ):
         message.bot = bot
         await _do_search(message.text, message)
@@ -120,7 +120,7 @@ async def test_handle_search_query_clears_state_and_runs_search() -> None:
     message.text = "паспорт"
     state = AsyncMock()
 
-    with patch("src.bot.handlers.search._do_search", AsyncMock()) as mock_search:
+    with patch("src.modules.documents.handlers.search._do_search", AsyncMock()) as mock_search:
         await handle_search_query(message, state)
 
     state.clear.assert_called_once()

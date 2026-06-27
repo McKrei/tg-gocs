@@ -5,10 +5,10 @@ import math
 
 import pytest
 
-from src.config import settings
-from src.drive.client import get_drive_service, is_drive_configured
-from src.llm.client import get_llm_client
-from src.llm.embeddings import get_embedding
+from src.core.config import settings
+from src.core.drive.client import get_drive_service, is_drive_configured
+from src.core.llm.client import get_llm_client
+from src.core.llm.embeddings import get_embedding
 
 
 @pytest.mark.integration

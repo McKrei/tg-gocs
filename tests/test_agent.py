@@ -13,8 +13,11 @@ from PIL import Image
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.agent.agent import classify_document, normalize_draft_metadata
-from src.agent.tools import (
+from src.core.db.base import Base
+from src.core.llm.embeddings import get_embedding
+from src.modules.documents.agent import classify_document, normalize_draft_metadata
+from src.modules.documents.models import Document, PendingUpload  # noqa: F401
+from src.modules.documents.tools import (
     convert_to_pdf,
     create_directory,
     extract_gdrive_file_id,
@@ -25,8 +28,6 @@ from src.agent.tools import (
     save_to_local_and_drive,
     vector_search,
 )
-from src.db.models import Base
-from src.llm.embeddings import get_embedding
 
 TEST_DB_PATH = Path("data/test_agent_db.db")
 
@@ -98,7 +99,7 @@ async def test_get_embedding() -> None:
 @pytest.mark.asyncio
 async def test_get_directory_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Проверяет корректность генерации дерева директорий."""
-    monkeypatch.setattr("src.config.settings.storage.local_storage_dir", str(tmp_path))
+    monkeypatch.setattr("src.core.config.settings.storage.local_storage_dir", str(tmp_path))
 
     (tmp_path / "Медицина").mkdir()
     (tmp_path / "Медицина" / "Жена").mkdir()
@@ -113,7 +114,7 @@ async def test_get_directory_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 @pytest.mark.asyncio
 async def test_create_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Проверяет создание папок в хранилище."""
-    monkeypatch.setattr("src.config.settings.storage.local_storage_dir", str(tmp_path))
+    monkeypatch.setattr("src.core.config.settings.storage.local_storage_dir", str(tmp_path))
 
     success = await create_directory("Медицина/Муж")
     assert success is True
@@ -123,7 +124,7 @@ async def test_create_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 @pytest.mark.asyncio
 async def test_convert_to_pdf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Проверяет склеивание картинок во временной папке в PDF."""
-    monkeypatch.setattr("src.config.settings.storage.temp_dir", str(tmp_path))
+    monkeypatch.setattr("src.core.config.settings.storage.temp_dir", str(tmp_path))
 
     img1 = tmp_path / "page1.jpg"
     img2 = tmp_path / "page2.jpg"
@@ -147,13 +148,14 @@ async def test_save_to_local_and_drive(tmp_path: Path, monkeypatch: pytest.Monke
     local_dir.mkdir()
     temp_dir.mkdir()
 
-    monkeypatch.setattr("src.config.settings.storage.local_storage_dir", str(local_dir))
+    monkeypatch.setattr("src.core.config.settings.storage.local_storage_dir", str(local_dir))
 
     temp_file = temp_dir / "passport.jpg"
     temp_file.write_text("some data")
 
     with patch(
-        "src.agent.tools.upload_file_with_status", AsyncMock(return_value={"link": None, "error": "mock_error"})
+        "src.modules.documents.tools.upload_file_with_status",
+        AsyncMock(return_value={"link": None, "error": "mock_error"}),
     ):
         res = await save_to_local_and_drive(str(temp_file), "Личное/passport.jpg")
 
@@ -166,12 +168,12 @@ async def test_save_to_local_and_drive(tmp_path: Path, monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_vector_search_tool(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
     """Проверяет работу поискового инструмента с базой данных."""
-    monkeypatch.setattr("src.agent.tools.async_session", lambda: db_session)
+    monkeypatch.setattr("src.modules.documents.tools.async_session", lambda: db_session)
 
     # Мокаем генерацию эмбеддингов
-    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=[0.1] * 768)):
+    with patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=[0.1] * 768)):
         # Предварительно добавим документ в БД через репозиторий
-        from src.db.repository import DocumentRepository
+        from src.modules.documents.repository import DocumentRepository
 
         repo = DocumentRepository(db_session)
         await repo.add_document(
@@ -228,14 +230,14 @@ async def test_classify_document_orchestrator(tmp_path: Path, monkeypatch: pytes
     mock_resp_step2.choices = [mock_choice_step2]
 
     # Мокаем вызовы к OpenRouter API
-    with patch("src.agent.agent.get_llm_client") as mock_get_client:
+    with patch("src.modules.documents.agent.get_llm_client") as mock_get_client:
         mock_client = MagicMock()
         mock_client.chat.completions.create = AsyncMock(side_effect=[mock_resp_step1, mock_resp_step2])
         mock_get_client.return_value = mock_client
 
         # Мокаем сам инструмент
         with patch(
-            "src.agent.agent.TOOLS_MAP",
+            "src.modules.documents.agent.TOOLS_MAP",
             {"get_directory_tree": AsyncMock(return_value="Дерево директорий")},
         ):
             result = await classify_document(str(test_img))
@@ -279,13 +281,13 @@ async def test_get_existing_structure(
     db_session: AsyncSession, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Проверяет получение структуры папок и данных из БД."""
-    monkeypatch.setattr("src.config.settings.storage.local_storage_dir", str(tmp_path))
-    monkeypatch.setattr("src.agent.tools.async_session", lambda: db_session)
+    monkeypatch.setattr("src.core.config.settings.storage.local_storage_dir", str(tmp_path))
+    monkeypatch.setattr("src.modules.documents.tools.async_session", lambda: db_session)
 
     (tmp_path / "Медицина").mkdir()
     (tmp_path / "Медицина" / "Жена").mkdir()
 
-    from src.db.repository import DocumentRepository
+    from src.modules.documents.repository import DocumentRepository
 
     repo = DocumentRepository(db_session)
     await repo.add_document(
@@ -317,7 +319,7 @@ def test_extract_gdrive_file_id() -> None:
 
 def test_get_unique_filename(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Проверяет генерацию уникального имени файла."""
-    monkeypatch.setattr("src.config.settings.storage.local_storage_dir", str(tmp_path))
+    monkeypatch.setattr("src.core.config.settings.storage.local_storage_dir", str(tmp_path))
     category = "Personal"
     (tmp_path / category).mkdir(parents=True, exist_ok=True)
 
@@ -334,9 +336,9 @@ def test_get_unique_filename(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 @pytest.mark.asyncio
 async def test_find_similar_document(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
     """Проверяет поиск похожих документов по пути и вектору."""
-    monkeypatch.setattr("src.agent.tools.async_session", lambda: db_session)
+    monkeypatch.setattr("src.modules.documents.tools.async_session", lambda: db_session)
 
-    from src.db.repository import DocumentRepository
+    from src.modules.documents.repository import DocumentRepository
 
     repo = DocumentRepository(db_session)
     await repo.add_document(
@@ -355,15 +357,15 @@ async def test_find_similar_document(db_session: AsyncSession, monkeypatch: pyte
     assert res_exact["reason"] == "exact_path"
     assert res_exact["similarity_percent"] == 100
 
-    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)), \
-         patch("src.llm.duplicate_verifier.check_is_duplicate", AsyncMock(return_value=True)):
+    with patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)), \
+         patch("src.modules.documents.services.duplicate_verifier.check_is_duplicate", AsyncMock(return_value=True)):
         res_semantic = await find_similar_document("Other", "passport.pdf", "Похожее описание")
         assert res_semantic is not None
         assert res_semantic["reason"] == "semantic"
         assert res_semantic["similarity_percent"] > 90
 
     dummy_emb = [0.1 if i % 2 == 0 else -0.1 for i in range(768)]
-    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=dummy_emb)):
+    with patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=dummy_emb)):
         res_diff = await find_similar_document("Other", "passport.pdf", "Совсем другой документ")
         assert res_diff is None
 
@@ -371,9 +373,9 @@ async def test_find_similar_document(db_session: AsyncSession, monkeypatch: pyte
 @pytest.mark.asyncio
 async def test_find_similar_document_by_distance(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
     """Проверяет логику поиска дубликатов по расстояниям."""
-    monkeypatch.setattr("src.agent.tools.async_session", lambda: db_session)
+    monkeypatch.setattr("src.modules.documents.tools.async_session", lambda: db_session)
 
-    from src.db.repository import DocumentRepository
+    from src.modules.documents.repository import DocumentRepository
 
     repo = DocumentRepository(db_session)
     await repo.add_document(
@@ -388,14 +390,14 @@ async def test_find_similar_document_by_distance(db_session: AsyncSession, monke
     await db_session.commit()
 
     # 1. Расстояние < 0.10 (0.001 разница по каждому измерению -> расстояние ~0.0277) -> дубликат автоматически
-    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)):
+    with patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)):
         res_semantic = await find_similar_document("Other", "passport.pdf", "Похожее описание")
         assert res_semantic is not None
         assert res_semantic["saved_filename"] == "pass.pdf"
 
     # 2. Расстояние >= 0.20 (разнонаправленные вектора -> косинусное расстояние ~1.0) -> не дубликат (unique)
     diff_emb = [-0.1 if i % 2 == 0 else 0.1 for i in range(768)]
-    with patch("src.agent.tools.get_embedding", AsyncMock(return_value=diff_emb)):
+    with patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=diff_emb)):
         res_semantic = await find_similar_document("Other", "passport.pdf", "Другое описание")
         assert res_semantic is None
 
@@ -403,14 +405,14 @@ async def test_find_similar_document_by_distance(db_session: AsyncSession, monke
 @pytest.mark.asyncio
 async def test_check_is_duplicate() -> None:
     """Проверяет функцию check_is_duplicate с мокированием ответа LLM."""
-    from src.llm.duplicate_verifier import check_is_duplicate
+    from src.modules.documents.services.duplicate_verifier import check_is_duplicate
 
     mock_resp = MagicMock()
     mock_resp.choices = [
         MagicMock(message=MagicMock(content='{"is_duplicate": true, "reason": "Совпадают все данные"}'))
     ]
 
-    with patch("src.llm.duplicate_verifier.get_llm_client") as mock_get_client:
+    with patch("src.modules.documents.services.duplicate_verifier.get_llm_client") as mock_get_client:
         mock_client = MagicMock()
         mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
         mock_get_client.return_value = mock_client
@@ -425,7 +427,7 @@ async def test_check_is_duplicate() -> None:
     mock_resp_false.choices = [
         MagicMock(message=MagicMock(content='{"is_duplicate": false, "reason": "Разные владельцы"}'))
     ]
-    with patch("src.llm.duplicate_verifier.get_llm_client") as mock_get_client:
+    with patch("src.modules.documents.services.duplicate_verifier.get_llm_client") as mock_get_client:
         mock_client = MagicMock()
         mock_client.chat.completions.create = AsyncMock(return_value=mock_resp_false)
         mock_get_client.return_value = mock_client

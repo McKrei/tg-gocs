@@ -1,6 +1,6 @@
 """Тесты для модуля конфигурации проекта."""
 
-from src.config import settings
+from src.core.config import settings
 
 
 def test_config_loads() -> None:

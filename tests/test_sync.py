@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.db.models import Document
-from src.services.sync import sync_drive_to_db
+from src.modules.documents.models import Document
+from src.modules.documents.services.sync import sync_drive_to_db
 
 
 @pytest.mark.asyncio
@@ -54,13 +54,13 @@ async def test_sync_drive_to_db_removes_stale_documents() -> None:
     mock_session.commit = AsyncMock()
 
     with (
-        patch("src.services.sync.is_drive_configured", mock_is_configured),
-        patch("src.services.sync.list_files_recursive", mock_list_recursive),
-        patch("src.services.sync.async_session") as mock_session_maker,
-        patch("src.services.sync.DocumentRepository", return_value=mock_repo),
-        patch("src.services.sync.Path.exists", return_value=True),
-        patch("src.services.sync.Path.is_file", return_value=True),
-        patch("src.services.sync.Path.unlink") as mock_unlink,
+        patch("src.modules.documents.services.sync.is_drive_configured", mock_is_configured),
+        patch("src.modules.documents.services.sync.list_files_recursive", mock_list_recursive),
+        patch("src.modules.documents.services.sync.async_session") as mock_session_maker,
+        patch("src.modules.documents.services.sync.DocumentRepository", return_value=mock_repo),
+        patch("src.modules.documents.services.sync.Path.exists", return_value=True),
+        patch("src.modules.documents.services.sync.Path.is_file", return_value=True),
+        patch("src.modules.documents.services.sync.Path.unlink") as mock_unlink,
     ):
         mock_session_maker.return_value.__aenter__.return_value = mock_session
 

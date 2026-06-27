@@ -4,8 +4,8 @@ import pytest
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 
-from src.bot.handlers.callbacks import handle_confirm_save
-from src.bot.handlers.files import handle_photo, rate_limits
+from src.modules.documents.handlers.callbacks import handle_confirm_save
+from src.modules.documents.handlers.files import handle_photo, rate_limits
 
 
 @pytest.mark.asyncio
@@ -19,7 +19,7 @@ async def test_file_too_large() -> None:
     photo = MagicMock(file_id="large_photo", file_size=60 * 1024 * 1024)
     message.photo = [photo]
 
-    with patch("src.bot.handlers.files.settings") as mock_settings:
+    with patch("src.modules.documents.handlers.files.settings") as mock_settings:
         mock_settings.storage.max_file_size_mb = 50
         await handle_photo(message, bot, state)
 
@@ -42,7 +42,7 @@ async def test_rate_limiting() -> None:
 
     rate_limits.clear()
 
-    with patch("src.bot.handlers.files.settings") as mock_settings:
+    with patch("src.modules.documents.handlers.files.settings") as mock_settings:
         mock_settings.storage.max_file_size_mb = 50
         mock_settings.storage.rate_limit_per_minute = 2
 
@@ -83,15 +83,15 @@ async def test_drive_unavailable_fallback() -> None:
     }
 
     with (
-        patch("src.bot.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
-        patch("src.bot.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
-        patch("src.bot.handlers.callbacks.async_session") as mock_session_maker,
-        patch("src.bot.handlers.callbacks._cleanup_files"),
+        patch("src.modules.documents.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
+        patch("src.modules.documents.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
+        patch("src.modules.documents.handlers.callbacks.async_session") as mock_session_maker,
+        patch("src.modules.documents.handlers.callbacks._cleanup_files"),
     ):
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
 
-        with patch("src.bot.handlers.callbacks.DocumentRepository") as mock_repo_class:
+        with patch("src.modules.documents.handlers.callbacks.DocumentRepository") as mock_repo_class:
             mock_repo = MagicMock()
             mock_repo.add_document = AsyncMock()
             mock_repo.add_pending_upload = AsyncMock()
@@ -137,15 +137,15 @@ async def test_confirm_save_removes_buttons_before_long_operations() -> None:
     }
 
     with (
-        patch("src.bot.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
-        patch("src.bot.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
-        patch("src.bot.handlers.callbacks.async_session") as mock_session_maker,
-        patch("src.bot.handlers.callbacks._cleanup_files"),
+        patch("src.modules.documents.handlers.callbacks.save_to_local_and_drive", AsyncMock(return_value=save_result)),
+        patch("src.modules.documents.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
+        patch("src.modules.documents.handlers.callbacks.async_session") as mock_session_maker,
+        patch("src.modules.documents.handlers.callbacks._cleanup_files"),
     ):
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
 
-        with patch("src.bot.handlers.callbacks.DocumentRepository") as mock_repo_class:
+        with patch("src.modules.documents.handlers.callbacks.DocumentRepository") as mock_repo_class:
             mock_repo = MagicMock()
             mock_repo.add_document = AsyncMock()
             mock_repo_class.return_value = mock_repo

@@ -7,8 +7,8 @@ import pytest
 from googleapiclient.errors import HttpError
 from httplib2 import Response
 
-from src.drive.client import get_drive_service, is_drive_configured
-from src.drive.uploader import find_folder_by_path, upload_file, upload_file_with_status
+from src.core.drive.client import get_drive_service, is_drive_configured
+from src.core.drive.uploader import find_folder_by_path, upload_file, upload_file_with_status
 
 
 @pytest.mark.asyncio
@@ -43,8 +43,8 @@ async def test_upload_file_mocked(tmp_path: Path) -> None:
     temp_file.write_text("test content")
 
     with (
-        patch("src.drive.uploader.is_drive_configured", return_value=True),
-        patch("src.drive.uploader.get_drive_service", return_value=mock_service),
+        patch("src.core.drive.uploader.is_drive_configured", return_value=True),
+        patch("src.core.drive.uploader.get_drive_service", return_value=mock_service),
     ):
         # Загружаем файл во вложенную категорию "Личное/Документы/doc.pdf"
         link = await upload_file(str(temp_file), "Личное/Документы/doc.pdf")
@@ -63,8 +63,8 @@ async def test_upload_file_with_status_returns_error(tmp_path: Path) -> None:
     temp_file.write_text("test content")
 
     with (
-        patch("src.drive.uploader.is_drive_configured", return_value=True),
-        patch("src.drive.uploader._upload_file_with_retry", side_effect=RuntimeError("storageQuotaExceeded")),
+        patch("src.core.drive.uploader.is_drive_configured", return_value=True),
+        patch("src.core.drive.uploader._upload_file_with_retry", side_effect=RuntimeError("storageQuotaExceeded")),
     ):
         result = await upload_file_with_status(str(temp_file), "Личное/doc.pdf")
 
@@ -83,8 +83,8 @@ async def test_upload_file_with_status_does_not_retry_permanent_quota_error(tmp_
     )
 
     with (
-        patch("src.drive.uploader.is_drive_configured", return_value=True),
-        patch("src.drive.uploader._upload_file_sync", side_effect=error) as mock_upload,
+        patch("src.core.drive.uploader.is_drive_configured", return_value=True),
+        patch("src.core.drive.uploader._upload_file_sync", side_effect=error) as mock_upload,
     ):
         result = await upload_file_with_status(str(temp_file), "Личное/doc.pdf")
 
@@ -116,12 +116,12 @@ async def test_get_drive_service_oauth_success() -> None:
     mock_creds_instance.expired = False
 
     with (
-        patch("src.drive.client.Path.exists", side_effect=lambda: True),
+        patch("src.core.drive.client.Path.exists", side_effect=lambda: True),
         patch(
-            "src.drive.client.Credentials.from_authorized_user_file",
+            "src.core.drive.client.Credentials.from_authorized_user_file",
             return_value=mock_creds_instance,
         ) as mock_oauth_from_file,
-        patch("src.drive.client.build") as mock_build,
+        patch("src.core.drive.client.build") as mock_build,
     ):
         service = get_drive_service()
         assert service is not None
@@ -139,11 +139,11 @@ async def test_get_drive_service_oauth_refresh() -> None:
     mock_write_text = MagicMock()
 
     with (
-        patch("src.drive.client.Path.exists", side_effect=lambda: True),
-        patch("src.drive.client.Credentials.from_authorized_user_file", return_value=mock_creds_instance),
-        patch("src.drive.client.Request"),
-        patch("src.drive.client.Path.write_text", mock_write_text),
-        patch("src.drive.client.build") as mock_build,
+        patch("src.core.drive.client.Path.exists", side_effect=lambda: True),
+        patch("src.core.drive.client.Credentials.from_authorized_user_file", return_value=mock_creds_instance),
+        patch("src.core.drive.client.Request"),
+        patch("src.core.drive.client.Path.write_text", mock_write_text),
+        patch("src.core.drive.client.build") as mock_build,
     ):
         service = get_drive_service()
         assert service is not None
@@ -161,12 +161,12 @@ async def test_get_drive_service_service_account_fallback() -> None:
         return "token.json" not in str(self)
 
     with (
-        patch("src.drive.client.Path.exists", path_exists_mock),
+        patch("src.core.drive.client.Path.exists", path_exists_mock),
         patch(
-            "src.drive.client.service_account.Credentials.from_service_account_file",
+            "src.core.drive.client.service_account.Credentials.from_service_account_file",
             return_value=mock_sa_creds,
         ) as mock_sa_from_file,
-        patch("src.drive.client.build") as mock_build,
+        patch("src.core.drive.client.build") as mock_build,
     ):
         service = get_drive_service()
         assert service is not None
@@ -178,7 +178,7 @@ async def test_get_drive_service_service_account_fallback() -> None:
 async def test_get_drive_service_no_creds_error() -> None:
     """Проверяет выброс FileNotFoundError, если нет никаких файлов для авторизации."""
     with (
-        patch("src.drive.client.Path.exists", return_value=False),
+        patch("src.core.drive.client.Path.exists", return_value=False),
         pytest.raises(FileNotFoundError),
     ):
         get_drive_service()
@@ -197,8 +197,8 @@ async def test_find_folder_by_path() -> None:
     mock_list.execute.return_value = {"files": [{"id": "folder_456"}]}
 
     with (
-        patch("src.drive.uploader.is_drive_configured", return_value=True),
-        patch("src.drive.uploader.get_drive_service", return_value=mock_service),
+        patch("src.core.drive.uploader.is_drive_configured", return_value=True),
+        patch("src.core.drive.uploader.get_drive_service", return_value=mock_service),
     ):
         folder_id = await find_folder_by_path("Личные/Документы")
         assert folder_id == "folder_456"

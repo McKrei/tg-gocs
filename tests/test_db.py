@@ -11,8 +11,9 @@ import sqlite_vec
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.db.models import Base
-from src.db.repository import DocumentRepository
+from src.core.db.base import Base
+from src.modules.documents.models import Document, PendingUpload  # noqa: F401
+from src.modules.documents.repository import DocumentRepository
 
 TEST_DB_PATH = Path("data/test_db.db")
 

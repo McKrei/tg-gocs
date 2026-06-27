@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from aiogram import types
 
-from src.bot.handlers.inbox import handle_inbox_skip
+from src.modules.documents.handlers.inbox import handle_inbox_skip
 
 
 @pytest.mark.asyncio
@@ -30,8 +30,8 @@ async def test_handle_inbox_skip_deletes_file() -> None:
     )
 
     with (
-        patch("src.drive.client.delete_drive_file") as mock_delete,
-        patch("src.bot.handlers.inbox._show_next_inbox_file", AsyncMock()) as mock_next,
+        patch("src.core.drive.client.delete_drive_file") as mock_delete,
+        patch("src.modules.documents.handlers.inbox._show_next_inbox_file", AsyncMock()) as mock_next,
     ):
         await handle_inbox_skip(callback, state)
 

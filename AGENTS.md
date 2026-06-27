@@ -5,9 +5,9 @@
 Перед любой задачей прочитай:
 - **Архитектура и потоки данных:** [`docs/architecture.md`](docs/architecture.md)
 - **Планы оптимизации и модульности:** [`docs/plans.md`](docs/plans.md) — к чему стремимся при расширении
-- **Конфигурация:** [`src/config.py`](src/config.py) — все параметры, классы `BotConfig`, `LLMConfig`, `DBConfig`, `StorageConfig`
-- **Инструменты агента:** [`src/agent/tools.py`](src/agent/tools.py) — `TOOLS_MAP`, `CLASSIFY_TOOLS_MAP`
-- **Модель данных:** [`src/db/models.py`](src/db/models.py) — таблица `documents`
+- **Конфигурация:** [`src/core/config.py`](src/core/config.py) — все параметры, классы `BotConfig`, `LLMConfig`, `DBConfig`, `StorageConfig`
+- **Инструменты агента:** [`src/modules/documents/tools.py`](src/modules/documents/tools.py) — `TOOLS_MAP`, `CLASSIFY_TOOLS_MAP`
+- **Модель данных:** [`src/modules/documents/models.py`](src/modules/documents/models.py) — таблица `documents`
 - **CI/CD:** [`docs/cicd.md`](docs/cicd.md) — автодеплой через GitHub Actions
 
 ### Целевое видение расширения (Модульность)
@@ -18,11 +18,11 @@
 
 Ключевые точки входа:
 - Бот: [`src/bot/main.py`](src/bot/main.py)
-- FSM-состояния: [`src/bot/states.py`](src/bot/states.py) (`DocumentProcessingStates`, `InboxStates`)
-- Хэндлеры: `src/bot/handlers/` (`commands.py`, `files.py`, `callbacks.py`, `text.py`, `search.py`, `inbox.py`)
-- Оркестратор агента: [`src/agent/agent.py`](src/agent/agent.py)
-- Репозиторий БД: [`src/db/repository.py`](src/db/repository.py)
-- Синхронизация Drive: [`src/services/sync.py`](src/services/sync.py)
+- FSM-состояния: [`src/modules/documents/states.py`](src/modules/documents/states.py) (`DocumentProcessingStates`, `InboxStates`)
+- Хэндлеры: `src/modules/documents/handlers/` (`commands.py`, `files.py`, `callbacks.py`, `text.py`, `search.py`, `inbox.py`)
+- Оркестратор агента: [`src/modules/documents/agent.py`](src/modules/documents/agent.py)
+- Репозиторий БД: [`src/modules/documents/repository.py`](src/modules/documents/repository.py)
+- Синхронизация Drive: [`src/modules/documents/services/sync.py`](src/modules/documents/services/sync.py)
 
 ---
 
