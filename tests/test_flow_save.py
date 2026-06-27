@@ -114,7 +114,10 @@ async def test_flow_save_end_to_end() -> None:
 
     bot.edit_message_text.reset_mock()
 
-    with patch("src.modules.documents.handlers.text.refine_draft", AsyncMock(return_value=refined_draft)):
+    with (
+        patch("src.modules.documents.handlers.text.refine_draft", AsyncMock(return_value=refined_draft)),
+        patch("src.modules.documents.handlers.text.find_similar_document", AsyncMock(return_value=None)),
+    ):
         await handle_refinement(message_text, bot, state)
 
         assert fsm_data["draft"] == refined_draft
