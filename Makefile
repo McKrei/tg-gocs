@@ -28,11 +28,11 @@ format:
 
 # Запуск контейнера в Docker Compose
 up:
-	docker-compose up --build -d
+	docker compose up --build -d
 
 # Остановка контейнера Docker Compose
 down:
-	docker-compose down
+	docker compose down
 
 # Очистка кэшей и временных файлов
 clean:
