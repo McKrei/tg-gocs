@@ -38,18 +38,16 @@ async def _rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict
     ]
 
     prompt = (
-        "Ты — интеллектуальный ассистент по поиску семейных документов.\n"
-        "Тебе предоставлен поисковый запрос пользователя и список документов, "
-        "найденных по векторному сходству.\n"
-        "Твоя задача — определить, какие из найденных документов действительно "
-        "соответствуют запросу пользователя.\n\n"
-        "ПРАВИЛА ОТБОРА:\n"
-        "1. Проанализируй имена файлов и краткие описания (summary).\n"
-        "2. Выбери только те документы, которые прямо относятся к запросу. "
-        "Если пользователь ищет 'все консультации кардиолога', выбери все консультации кардиолога "
-        "независимо от их даты. Если пользователь ищет конкретный документ, выбери только его.\n"
-        "3. Верни список ID документов в порядке релевантности.\n\n"
-        "Результат — СТРОГО JSON со следующим ключом:\n"
+        "Ты — строгий фильтр документов.\n"
+        "Тебе предоставлен поисковый запрос пользователя и список документов-кандидатов.\n\n"
+        "ПРАВИЛА ОТБОРА — СТРОГО:\n"
+        "1. Выбирай ТОЛЬКО документы, которые ПРЯМО и ТОЧНО соответствуют запросу.\n"
+        "2. НЕ включай документы, которые лишь косвенно связаны с темой запроса.\n"
+        "   Пример: если пользователь просит 'консультации кардиолога', НЕ включай\n"
+        "   результаты анализов, мониторирования ЭКГ или других процедур — только сами консультации.\n"
+        "3. Если пользователь просит 'все [тип документа]', включай ВСЕ документы этого типа.\n"
+        "4. Верни список ID в порядке хронологии (по имени файла).\n\n"
+        "Результат — СТРОГО JSON с единственным ключом:\n"
         "- matching_doc_ids: список строк (UUID) или пустой список\n\n"
         f"Список документов:\n{json.dumps(docs_subset, ensure_ascii=False)}\n\n"
         f'Запрос пользователя:\n"{query}"\n'
@@ -88,16 +86,14 @@ async def _generate_search_explanation(query: str, matched_documents: list[dict[
     prompt = (
         "Ты — интеллектуальный ассистент по поиску семейных документов.\n"
         "Пользователь искал документы по запросу.\n"
-        "Мы выполнили поиск и нашли следующие подтвержденные (верифицированные) документы:\n\n"
+        "Мы нашли следующие подтверждённые документы:\n\n"
         f"{json.dumps(docs_subset, ensure_ascii=False)}\n\n"
-        f"Запрос пользователя: \"{query}\"\n\n"
-        "Твоя задача — сформулировать вежливый и понятный ответ для пользователя на русском языке.\n"
-        "В ответе:\n"
-        "1. Укажи, сколько документов найдено (например: 'Найдено 3 документа...').\n"
-        "2. Перечисли найденные документы (по именам/датам) и кратко расскажи, что представляет каждый из них.\n"
-        "3. Если документов несколько, опиши их хронологию или ключевые отличия "
-        "(например, разные даты консультаций).\n"
-        "Отвечай кратко, информативно и по делу, на русском языке."
+        f'Запрос пользователя: "{query}"\n\n'
+        "Сформулируй короткий и понятный ответ на русском языке:\n"
+        "1. Скажи, сколько документов найдено.\n"
+        "2. Для каждого документа — одна строка: дата и краткая суть.\n"
+        "3. Если несколько — выдели ключевые отличия между ними.\n"
+        "Пиши лаконично, без воды."
     )
 
     try:
@@ -108,7 +104,7 @@ async def _generate_search_explanation(query: str, matched_documents: list[dict[
         return response.choices[0].message.content or ""
     except Exception as e:
         logger.error(f"Ошибка при генерации объяснения поиска: {e}")
-        return f"Найдено {len(matched_documents)} док. (ошибка генерации описания)."
+        return f"Найдено {len(matched_documents)} документ(ов)."
 
 
 async def _do_search(query: str, message: types.Message) -> None:
@@ -118,7 +114,7 @@ async def _do_search(query: str, message: types.Message) -> None:
 
     try:
         search_results = await vector_search(query, limit=settings.llm.search_limit)
-        
+
         # Отсекаем по порогу расстояния
         filtered_results = [
             doc for doc in search_results
@@ -137,47 +133,92 @@ async def _do_search(query: str, message: types.Message) -> None:
             await message.answer("Ничего не найдено. Попробуйте уточнить запрос.")
             return
 
-        # Находим подходящие документы и сортируем их хронологически по имени файла
+        # Находим подходящие документы и сортируем хронологически по имени файла
         matched_docs = [d for d in filtered_results if d["id"] in matching_ids]
         matched_docs.sort(key=lambda d: d.get("saved_filename", ""))
 
-        # Получаем финальный ответ от модели по найденным документам
+        # Этап 2: получаем AI-объяснение по верифицированным документам
         explanation = await _generate_search_explanation(query, matched_docs)
 
-        # Отправляем сообщение с общим пояснением от ассистента
+        # Формируем список названий документов
+        names_list = "\n".join(
+            f"  {idx}. {html.escape(doc['saved_filename'])}"
+            for idx, doc in enumerate(matched_docs, 1)
+        )
         escaped_query = html.escape(query)
         escaped_explanation = html.escape(explanation)
+
+        # Первое сообщение: AI-текст + список названий
         await message.answer(
-            f"🔍 <b>Результаты поиска по запросу:</b> \"{escaped_query}\"\n\n{escaped_explanation}",
+            f"🔍 <b>Запрос:</b> \"{escaped_query}\"\n\n"
+            f"📋 <b>Найденные документы:</b>\n{names_list}\n\n"
+            f"{escaped_explanation}",
             parse_mode="HTML",
         )
 
-        for idx, doc in enumerate(matched_docs, 1):
-            filename = doc["saved_filename"]
-            local_path = doc["local_path"]
-            gdrive_link = doc["gdrive_link"]
-            category = doc["category"]
-            owner = doc["owner"]
+        # Второе: все файлы как медиа-группа (один альбом) или одиночный документ
+        existing_docs = [d for d in matched_docs if Path(d["local_path"]).exists()]
+        missing_docs = [d for d in matched_docs if not Path(d["local_path"]).exists()]
 
-            caption = (
-                f"📄 <b>Документ {idx} из {len(matched_docs)}:</b>\n"
-                f"📝 Имя: <code>{html.escape(filename)}</code>\n"
-                f"📁 Категория: <code>{html.escape(category)}</code>\n"
-                f"👤 Владелец: <code>{html.escape(owner)}</code>"
-            )
-            if gdrive_link:
-                caption += f"\n☁️ <a href=\"{gdrive_link}\">Открыть в Google Drive</a>"
-
-            doc_path = Path(local_path)
-            if doc_path.exists():
-                file_input = types.FSInputFile(str(doc_path), filename=filename)
+        if existing_docs:
+            if len(existing_docs) == 1:
+                # Один документ — отправляем напрямую
+                doc = existing_docs[0]
+                gdrive_link = doc["gdrive_link"]
+                caption = f"📄 <code>{html.escape(doc['saved_filename'])}</code>"
+                if gdrive_link:
+                    caption += f"\n☁️ <a href=\"{gdrive_link}\">Google Drive</a>"
+                file_input = types.FSInputFile(str(doc["local_path"]), filename=doc["saved_filename"])
                 await message.answer_document(file_input, caption=caption, parse_mode="HTML")
             else:
-                await message.answer(
-                    f"{caption}\n\n⚠️ Локальный файл не найден на сервере.",
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
+                # Несколько документов — медиа-группа (один альбом)
+                media_items: list[
+                    types.InputMediaAudio
+                    | types.InputMediaDocument
+                    | types.InputMediaLivePhoto
+                    | types.InputMediaPhoto
+                    | types.InputMediaVideo
+                ] = []
+                for idx, doc in enumerate(existing_docs):
+                    gdrive_link = doc["gdrive_link"]
+                    if idx == 0:
+                        # Подпись только у первого элемента группы
+                        first_gdrive = gdrive_link
+                        cap_lines = "\n".join(
+                            f"📄 {html.escape(d['saved_filename'])}"
+                            for d in existing_docs
+                        )
+                        cap = cap_lines
+                        if first_gdrive:
+                            cap += f"\n\n☁️ <a href=\"{first_gdrive}\">Google Drive</a>"
+                        media_items.append(
+                            types.InputMediaDocument(
+                                media=types.FSInputFile(
+                                    str(doc["local_path"]),
+                                    filename=doc["saved_filename"],
+                                ),
+                                caption=cap,
+                                parse_mode="HTML",
+                            )
+                        )
+                    else:
+                        media_items.append(
+                            types.InputMediaDocument(
+                                media=types.FSInputFile(
+                                    str(doc["local_path"]),
+                                    filename=doc["saved_filename"],
+                                ),
+                            )
+                        )
+                await bot.send_media_group(chat_id=message.chat.id, media=media_items)
+
+        # Сообщаем о файлах, которых нет локально
+        for doc in missing_docs:
+            gdrive_link = doc["gdrive_link"]
+            text = f"⚠️ Файл <code>{html.escape(doc['saved_filename'])}</code> не найден локально."
+            if gdrive_link:
+                text += f"\n☁️ <a href=\"{gdrive_link}\">Открыть в Google Drive</a>"
+            await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
 
     except Exception as e:
         logger.error(f"Ошибка при поиске документов: {e}")
