@@ -36,10 +36,7 @@ jobs:
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           CLEAN_MSG=$(echo "$COMMIT_MSG" | head -n 1 | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
-          TEXT="🚀 <b>Деплой tg-gocs успешно завершен!</b>
-
-<b>Коммит:</b> <a href='https://github.com/$REPO/commit/$SHA'>$CLEAN_MSG</a>
-<b>Автор:</b> $COMMIT_AUTHOR"
+          TEXT=$(printf "🚀 <b>Деплой tg-gocs успешно завершен!</b>\n\n<b>Коммит:</b> <a href='https://github.com/%s/commit/%s'>%s</a>\n<b>Автор:</b> %s" "$REPO" "$SHA" "$CLEAN_MSG" "$COMMIT_AUTHOR")
           
           curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
             --data-urlencode "chat_id=$CHAT_ID" \
@@ -58,13 +55,11 @@ jobs:
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           CLEAN_MSG=$(echo "$COMMIT_MSG" | head -n 1 | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
-          TEXT="❌ <b>Ошибка деплоя tg-gocs!</b>
-
-<b>Коммит:</b> <a href='https://github.com/$REPO/commit/$SHA'>$CLEAN_MSG</a>
-<b>Автор:</b> $COMMIT_AUTHOR"
+          TEXT=$(printf "❌ <b>Ошибка деплоя tg-gocs!</b>\n\n<b>Коммит:</b> <a href='https://github.com/%s/commit/%s'>%s</a>\n<b>Автор:</b> %s" "$REPO" "$SHA" "$CLEAN_MSG" "$COMMIT_AUTHOR")
           
           curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
             --data-urlencode "chat_id=$CHAT_ID" \
             --data-urlencode "parse_mode=HTML" \
             --data-urlencode "text=$TEXT" \
             --data-urlencode "disable_web_page_preview=true"
+
