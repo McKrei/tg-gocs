@@ -43,7 +43,7 @@ class LLMConfig(BaseSettings):
     embedding_dim: int = Field(768, alias="EMBEDDING_DIM")
     base_url: str = Field("https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
     search_limit: int = Field(10, alias="SEARCH_LIMIT")
-    search_threshold: float = Field(0.30, alias="SEARCH_THRESHOLD")
+    search_threshold: float = Field(0.80, alias="SEARCH_THRESHOLD")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

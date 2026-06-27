@@ -11,7 +11,6 @@ async def test_rerank_documents_no_docs() -> None:
     """Проверяет реранкинг, если список документов пуст."""
     res = await _rerank_documents("запрос", [])
     assert res["matching_doc_ids"] == []
-    assert "не найдены" in res["explanation"].lower()
 
 
 @pytest.mark.asyncio
@@ -31,10 +30,7 @@ async def test_rerank_documents_with_docs() -> None:
     mock_response.choices = [
         MagicMock(
             message=MagicMock(
-                content=(
-                    '{"matching_doc_ids": ["11111111-1111-1111-1111-111111111111"], '
-                    '"explanation": "Документ найден."}'
-                )
+                content='{"matching_doc_ids": ["11111111-1111-1111-1111-111111111111"]}'
             )
         )
     ]
@@ -45,7 +41,24 @@ async def test_rerank_documents_with_docs() -> None:
     with patch("src.modules.documents.handlers.search.get_llm_client", return_value=mock_client):
         res = await _rerank_documents("найди полис", mock_docs)
         assert res["matching_doc_ids"] == ["11111111-1111-1111-1111-111111111111"]
-        assert res["explanation"] == "Документ найден."
+
+
+@pytest.mark.asyncio
+async def test_generate_search_explanation() -> None:
+    """Проверяет генерацию текстового объяснения на основе найденных документов."""
+    from src.modules.documents.handlers.search import _generate_search_explanation
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content="Найдено 1 документ. Это полис."))
+    ]
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    with patch("src.modules.documents.handlers.search.get_llm_client", return_value=mock_client):
+        res = await _generate_search_explanation(
+            "найди полис",
+            [{"saved_filename": "polis.pdf", "category": "Медицина", "owner": "Жена", "summary": "Полис"}]
+        )
+        assert "полис" in res.lower()
 
 
 @pytest.mark.asyncio
@@ -75,12 +88,15 @@ async def test_handle_search_found(tmp_path) -> None:
 
     mock_rerank = {
         "matching_doc_ids": ["11111111-1111-1111-1111-111111111111"],
-        "explanation": "Этот документ подходит.",
     }
 
     with (
         patch("src.modules.documents.handlers.search.vector_search", AsyncMock(return_value=mock_search_results)),
         patch("src.modules.documents.handlers.search._rerank_documents", AsyncMock(return_value=mock_rerank)),
+        patch(
+            "src.modules.documents.handlers.search._generate_search_explanation",
+            AsyncMock(return_value="Этот документ подходит.")
+        ),
     ):
         message.bot = bot
         await _do_search(message.text, message)
@@ -110,7 +126,6 @@ async def test_handle_search_not_found() -> None:
     mock_search_results = []
     mock_rerank = {
         "matching_doc_ids": [],
-        "explanation": "Ничего не найдено.",
     }
 
     with (
@@ -119,7 +134,7 @@ async def test_handle_search_not_found() -> None:
     ):
         message.bot = bot
         await _do_search(message.text, message)
-        message.answer.assert_called_once_with("Ничего не найдено.")
+        message.answer.assert_called_once_with("Ничего не найдено. Попробуйте уточнить запрос.")
 
 
 @pytest.mark.asyncio

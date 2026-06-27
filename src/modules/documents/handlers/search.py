@@ -21,9 +21,9 @@ logger = get_logger(__name__)
 
 @with_retry(attempts=3, initial_delay=1.0)
 async def _rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict[str, Any]:
-    """Выполняет повторное ранжирование документов с помощью LLM."""
+    """Выполняет фильтрацию и выбор подходящих документов с помощью LLM (Этап 1)."""
     if not documents:
-        return {"matching_doc_ids": [], "explanation": "Документы не найдены."}
+        return {"matching_doc_ids": []}
 
     client = get_llm_client()
     docs_subset = [
@@ -39,18 +39,18 @@ async def _rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict
 
     prompt = (
         "Ты — интеллектуальный ассистент по поиску семейных документов.\n"
-        "Тебе предоставлен поисковый запрос пользователя и список документов, найденных по векторному сходству.\n"
-        "Твоя задача:\n"
-        "1. Проанализировать все найденные документы и определить, "
-        "какие из них действительно соответствуют запросу пользователя.\n"
-        "2. Выбрать список ID документов, которые подходят под запрос "
-        "(может быть несколько, один или ни одного). Список должен быть отсортирован по релевантности.\n"
-        "3. Сформулировать краткое и понятное пояснение для пользователя на русском языке. "
-        "В пояснении напиши, сколько всего подходящих документов найдено (например: 'Найдено 3 документа...'), "
-        "перечисли их (например, по датам/номерам/описанию) и кратко расскажи о каждом в контексте запроса.\n\n"
-        "Результат — СТРОГО JSON со следующими ключами:\n"
-        "- matching_doc_ids: список строк (UUID) или пустой список\n"
-        "- explanation: строка с подробным ответом на русском языке\n\n"
+        "Тебе предоставлен поисковый запрос пользователя и список документов, "
+        "найденных по векторному сходству.\n"
+        "Твоя задача — определить, какие из найденных документов действительно "
+        "соответствуют запросу пользователя.\n\n"
+        "ПРАВИЛА ОТБОРА:\n"
+        "1. Проанализируй имена файлов и краткие описания (summary).\n"
+        "2. Выбери только те документы, которые прямо относятся к запросу. "
+        "Если пользователь ищет 'все консультации кардиолога', выбери все консультации кардиолога "
+        "независимо от их даты. Если пользователь ищет конкретный документ, выбери только его.\n"
+        "3. Верни список ID документов в порядке релевантности.\n\n"
+        "Результат — СТРОГО JSON со следующим ключом:\n"
+        "- matching_doc_ids: список строк (UUID) или пустой список\n\n"
         f"Список документов:\n{json.dumps(docs_subset, ensure_ascii=False)}\n\n"
         f'Запрос пользователя:\n"{query}"\n'
     )
@@ -64,8 +64,51 @@ async def _rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict
         content = response.choices[0].message.content or ""
         return parse_json_content(content)
     except Exception as e:
-        logger.error(f"Ошибка при ранжировании документов: {e}")
-        return {"matching_doc_ids": [], "explanation": "Произошла ошибка при обработке запроса."}
+        logger.error(f"Ошибка при фильтрации документов: {e}")
+        return {"matching_doc_ids": []}
+
+
+@with_retry(attempts=3, initial_delay=1.0)
+async def _generate_search_explanation(query: str, matched_documents: list[dict[str, Any]]) -> str:
+    """Генерирует финальный текстовый ответ пользователю на основе верифицированных документов (Этап 2)."""
+    if not matched_documents:
+        return "Документы не найдены."
+
+    client = get_llm_client()
+    docs_subset = [
+        {
+            "saved_filename": doc["saved_filename"],
+            "category": doc["category"],
+            "owner": doc["owner"],
+            "summary": doc["summary"],
+        }
+        for doc in matched_documents
+    ]
+
+    prompt = (
+        "Ты — интеллектуальный ассистент по поиску семейных документов.\n"
+        "Пользователь искал документы по запросу.\n"
+        "Мы выполнили поиск и нашли следующие подтвержденные (верифицированные) документы:\n\n"
+        f"{json.dumps(docs_subset, ensure_ascii=False)}\n\n"
+        f"Запрос пользователя: \"{query}\"\n\n"
+        "Твоя задача — сформулировать вежливый и понятный ответ для пользователя на русском языке.\n"
+        "В ответе:\n"
+        "1. Укажи, сколько документов найдено (например: 'Найдено 3 документа...').\n"
+        "2. Перечисли найденные документы (по именам/датам) и кратко расскажи, что представляет каждый из них.\n"
+        "3. Если документов несколько, опиши их хронологию или ключевые отличия "
+        "(например, разные даты консультаций).\n"
+        "Отвечай кратко, информативно и по делу, на русском языке."
+    )
+
+    try:
+        response = await client.chat.completions.create(
+            model=settings.llm.model_name,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content or ""
+    except Exception as e:
+        logger.error(f"Ошибка при генерации объяснения поиска: {e}")
+        return f"Найдено {len(matched_documents)} док. (ошибка генерации описания)."
 
 
 async def _do_search(query: str, message: types.Message) -> None:
@@ -90,15 +133,16 @@ async def _do_search(query: str, message: types.Message) -> None:
             best_id = rerank_result.get("best_match_id")
             matching_ids = [best_id] if best_id else []
 
-        explanation = rerank_result.get("explanation", "")
-
         if not matching_ids:
-            await message.answer(explanation or "Ничего не найдено. Попробуйте уточнить запрос.")
+            await message.answer("Ничего не найдено. Попробуйте уточнить запрос.")
             return
 
         # Находим подходящие документы и сортируем их хронологически по имени файла
         matched_docs = [d for d in filtered_results if d["id"] in matching_ids]
         matched_docs.sort(key=lambda d: d.get("saved_filename", ""))
+
+        # Получаем финальный ответ от модели по найденным документам
+        explanation = await _generate_search_explanation(query, matched_docs)
 
         # Отправляем сообщение с общим пояснением от ассистента
         escaped_query = html.escape(query)
