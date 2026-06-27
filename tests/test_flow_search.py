@@ -10,7 +10,7 @@ from src.modules.documents.handlers.search import _do_search, _rerank_documents,
 async def test_rerank_documents_no_docs() -> None:
     """Проверяет реранкинг, если список документов пуст."""
     res = await _rerank_documents("запрос", [])
-    assert res["best_match_id"] is None
+    assert res["matching_doc_ids"] == []
     assert "не найдены" in res["explanation"].lower()
 
 
@@ -31,7 +31,10 @@ async def test_rerank_documents_with_docs() -> None:
     mock_response.choices = [
         MagicMock(
             message=MagicMock(
-                content='{"best_match_id": "11111111-1111-1111-1111-111111111111", "explanation": "Документ найден."}'
+                content=(
+                    '{"matching_doc_ids": ["11111111-1111-1111-1111-111111111111"], '
+                    '"explanation": "Документ найден."}'
+                )
             )
         )
     ]
@@ -41,7 +44,7 @@ async def test_rerank_documents_with_docs() -> None:
 
     with patch("src.modules.documents.handlers.search.get_llm_client", return_value=mock_client):
         res = await _rerank_documents("найди полис", mock_docs)
-        assert res["best_match_id"] == "11111111-1111-1111-1111-111111111111"
+        assert res["matching_doc_ids"] == ["11111111-1111-1111-1111-111111111111"]
         assert res["explanation"] == "Документ найден."
 
 
@@ -66,11 +69,12 @@ async def test_handle_search_found(tmp_path) -> None:
             "category": "Медицина",
             "owner": "Жена",
             "summary": "Медицинский полис жены",
+            "distance": 0.05,
         }
     ]
 
     mock_rerank = {
-        "best_match_id": "11111111-1111-1111-1111-111111111111",
+        "matching_doc_ids": ["11111111-1111-1111-1111-111111111111"],
         "explanation": "Этот документ подходит.",
     }
 
@@ -81,7 +85,12 @@ async def test_handle_search_found(tmp_path) -> None:
         message.bot = bot
         await _do_search(message.text, message)
 
-        # Проверяем, что отправлен документ
+        # Проверяем, что отправлен документ и текст-объяснение
+        message.answer.assert_called_once()
+        text_args, _ = message.answer.call_args
+        assert "Результаты поиска по запросу" in text_args[0]
+        assert "Этот документ подходит." in text_args[0]
+
         message.answer_document.assert_called_once()
         args, kwargs = message.answer_document.call_args
         assert isinstance(args[0], types.FSInputFile)
@@ -100,7 +109,7 @@ async def test_handle_search_not_found() -> None:
 
     mock_search_results = []
     mock_rerank = {
-        "best_match_id": None,
+        "matching_doc_ids": [],
         "explanation": "Ничего не найдено.",
     }
 

@@ -1,3 +1,4 @@
+import html
 import json
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,7 @@ logger = get_logger(__name__)
 async def _rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict[str, Any]:
     """Выполняет повторное ранжирование документов с помощью LLM."""
     if not documents:
-        return {"best_match_id": None, "explanation": "Документы не найдены."}
+        return {"matching_doc_ids": [], "explanation": "Документы не найдены."}
 
     client = get_llm_client()
     docs_subset = [
@@ -40,12 +41,16 @@ async def _rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict
         "Ты — интеллектуальный ассистент по поиску семейных документов.\n"
         "Тебе предоставлен поисковый запрос пользователя и список документов, найденных по векторному сходству.\n"
         "Твоя задача:\n"
-        "1. Определить, какой из найденных документов наиболее точно соответствует запросу пользователя.\n"
-        "2. Если ни один документ не подходит, верни null в поле 'best_match_id'.\n"
-        "3. Сформулировать краткое пояснение для пользователя.\n\n"
+        "1. Проанализировать все найденные документы и определить, "
+        "какие из них действительно соответствуют запросу пользователя.\n"
+        "2. Выбрать список ID документов, которые подходят под запрос "
+        "(может быть несколько, один или ни одного). Список должен быть отсортирован по релевантности.\n"
+        "3. Сформулировать краткое и понятное пояснение для пользователя на русском языке. "
+        "В пояснении напиши, сколько всего подходящих документов найдено (например: 'Найдено 3 документа...'), "
+        "перечисли их (например, по датам/номерам/описанию) и кратко расскажи о каждом в контексте запроса.\n\n"
         "Результат — СТРОГО JSON со следующими ключами:\n"
-        "- best_match_id: строка (UUID) или null\n"
-        "- explanation: строка\n\n"
+        "- matching_doc_ids: список строк (UUID) или пустой список\n"
+        "- explanation: строка с подробным ответом на русском языке\n\n"
         f"Список документов:\n{json.dumps(docs_subset, ensure_ascii=False)}\n\n"
         f'Запрос пользователя:\n"{query}"\n'
     )
@@ -60,7 +65,7 @@ async def _rerank_documents(query: str, documents: list[dict[str, Any]]) -> dict
         return parse_json_content(content)
     except Exception as e:
         logger.error(f"Ошибка при ранжировании документов: {e}")
-        return {"best_match_id": None, "explanation": "Произошла ошибка при обработке запроса."}
+        return {"matching_doc_ids": [], "explanation": "Произошла ошибка при обработке запроса."}
 
 
 async def _do_search(query: str, message: types.Message) -> None:
@@ -69,45 +74,66 @@ async def _do_search(query: str, message: types.Message) -> None:
     await bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
     try:
-        search_results = await vector_search(query, limit=5)
-        rerank_result = await _rerank_documents(query, search_results)
+        search_results = await vector_search(query, limit=settings.llm.search_limit)
+        
+        # Отсекаем по порогу расстояния
+        filtered_results = [
+            doc for doc in search_results
+            if doc.get("distance", 1.0) <= settings.llm.search_threshold
+        ]
 
-        best_match_id = rerank_result.get("best_match_id")
+        rerank_result = await _rerank_documents(query, filtered_results)
+
+        matching_ids = rerank_result.get("matching_doc_ids")
+        if matching_ids is None:
+            # Обратная совместимость для старого формата
+            best_id = rerank_result.get("best_match_id")
+            matching_ids = [best_id] if best_id else []
+
         explanation = rerank_result.get("explanation", "")
 
-        if not best_match_id:
+        if not matching_ids:
             await message.answer(explanation or "Ничего не найдено. Попробуйте уточнить запрос.")
             return
 
-        matched_doc = next((d for d in search_results if d["id"] == best_match_id), None)
-        if not matched_doc:
-            await message.answer("Произошла ошибка при сопоставлении документа.")
-            return
+        # Находим подходящие документы и сортируем их хронологически по имени файла
+        matched_docs = [d for d in filtered_results if d["id"] in matching_ids]
+        matched_docs.sort(key=lambda d: d.get("saved_filename", ""))
 
-        local_path = matched_doc["local_path"]
-        gdrive_link = matched_doc["gdrive_link"]
-        filename = matched_doc["saved_filename"]
-
-        caption = (
-            f"🔍 Найден документ:\n"
-            f"📄 {filename}\n"
-            f"📁 Категория: {matched_doc['category']}\n"
-            f"👤 Владелец: {matched_doc['owner']}\n\n"
-            f"{explanation}\n"
+        # Отправляем сообщение с общим пояснением от ассистента
+        escaped_query = html.escape(query)
+        escaped_explanation = html.escape(explanation)
+        await message.answer(
+            f"🔍 <b>Результаты поиска по запросу:</b> \"{escaped_query}\"\n\n{escaped_explanation}",
+            parse_mode="HTML",
         )
-        if gdrive_link:
-            caption += f"\n☁️ [Открыть в Google Drive]({gdrive_link})"
 
-        doc_path = Path(local_path)
-        if doc_path.exists():
-            file_input = types.FSInputFile(str(doc_path), filename=filename)
-            await message.answer_document(file_input, caption=caption, parse_mode="Markdown")
-        else:
-            await message.answer(
-                f"{caption}\n\n⚠️ Локальный файл не найден на сервере.",
-                parse_mode="Markdown",
-                disable_web_page_preview=True,
+        for idx, doc in enumerate(matched_docs, 1):
+            filename = doc["saved_filename"]
+            local_path = doc["local_path"]
+            gdrive_link = doc["gdrive_link"]
+            category = doc["category"]
+            owner = doc["owner"]
+
+            caption = (
+                f"📄 <b>Документ {idx} из {len(matched_docs)}:</b>\n"
+                f"📝 Имя: <code>{html.escape(filename)}</code>\n"
+                f"📁 Категория: <code>{html.escape(category)}</code>\n"
+                f"👤 Владелец: <code>{html.escape(owner)}</code>"
             )
+            if gdrive_link:
+                caption += f"\n☁️ <a href=\"{gdrive_link}\">Открыть в Google Drive</a>"
+
+            doc_path = Path(local_path)
+            if doc_path.exists():
+                file_input = types.FSInputFile(str(doc_path), filename=filename)
+                await message.answer_document(file_input, caption=caption, parse_mode="HTML")
+            else:
+                await message.answer(
+                    f"{caption}\n\n⚠️ Локальный файл не найден на сервере.",
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
 
     except Exception as e:
         logger.error(f"Ошибка при поиске документов: {e}")

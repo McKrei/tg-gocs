@@ -184,34 +184,36 @@ async def find_similar_document(category: str, filename: str, summary: str) -> d
 
         try:
             emb = await get_embedding(summary)
-            similar = await repo.search_documents(emb, limit=1)
-            if similar:
-                doc, distance = similar[0]
-                if distance < 0.10:
-                    # Почти 100% совпадение векторов — считаем дубликатом автоматически
-                    return {
-                        "id": doc.id,
-                        "saved_filename": doc.saved_filename,
-                        "category": doc.category,
-                        "summary": doc.summary,
-                        "gdrive_link": doc.gdrive_link,
-                        "local_path": doc.local_path,
-                        "reason": "semantic",
-                        "similarity_percent": round((1.0 - distance) * 100),
-                    }
-                if distance < 0.20:
-                    # Возможный дубликат — помечаем как дубликат для выбора пользователю
-                    # без вызова ресурсоемкой LLM-верификации
-                    return {
-                        "id": doc.id,
-                        "saved_filename": doc.saved_filename,
-                        "category": doc.category,
-                        "summary": doc.summary,
-                        "gdrive_link": doc.gdrive_link,
-                        "local_path": doc.local_path,
-                        "reason": "semantic",
-                        "similarity_percent": round((1.0 - distance) * 100),
-                    }
+            similar = await repo.search_documents(emb, limit=5)
+            for doc, distance in similar:
+                norm_new = Path(filename).stem.lower().strip()
+                norm_existing = Path(doc.saved_filename).stem.lower().strip()
+                if norm_new == norm_existing:
+                    if distance < 0.10:
+                        # Почти 100% совпадение векторов — считаем дубликатом автоматически
+                        return {
+                            "id": doc.id,
+                            "saved_filename": doc.saved_filename,
+                            "category": doc.category,
+                            "summary": doc.summary,
+                            "gdrive_link": doc.gdrive_link,
+                            "local_path": doc.local_path,
+                            "reason": "semantic",
+                            "similarity_percent": round((1.0 - distance) * 100),
+                        }
+                    if distance < 0.20:
+                        # Возможный дубликат — помечаем как дубликат для выбора пользователю
+                        # без вызова ресурсоемкой LLM-верификации
+                        return {
+                            "id": doc.id,
+                            "saved_filename": doc.saved_filename,
+                            "category": doc.category,
+                            "summary": doc.summary,
+                            "gdrive_link": doc.gdrive_link,
+                            "local_path": doc.local_path,
+                            "reason": "semantic",
+                            "similarity_percent": round((1.0 - distance) * 100),
+                        }
         except Exception as e:
             get_logger(__name__).error(f"Ошибка поиска дубликатов: {e}")
 

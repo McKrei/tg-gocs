@@ -42,6 +42,8 @@ class LLMConfig(BaseSettings):
     embedding_model_name: str = Field("google/gemini-embedding-2", alias="EMBEDDING_MODEL")
     embedding_dim: int = Field(768, alias="EMBEDDING_DIM")
     base_url: str = Field("https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
+    search_limit: int = Field(10, alias="SEARCH_LIMIT")
+    search_threshold: float = Field(0.30, alias="SEARCH_THRESHOLD")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

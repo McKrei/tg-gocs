@@ -357,16 +357,22 @@ async def test_find_similar_document(db_session: AsyncSession, monkeypatch: pyte
     assert res_exact["reason"] == "exact_path"
     assert res_exact["similarity_percent"] == 100
 
+    # С тем же именем файла (или нормализованным) -> должен найти семантический дубликат
     with patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)), \
          patch("src.modules.documents.services.duplicate_verifier.check_is_duplicate", AsyncMock(return_value=True)):
-        res_semantic = await find_similar_document("Other", "passport.pdf", "Похожее описание")
+        res_semantic = await find_similar_document("Other", "pass.jpg", "Похожее описание")
         assert res_semantic is not None
         assert res_semantic["reason"] == "semantic"
         assert res_semantic["similarity_percent"] > 90
 
+    # С другим именем файла -> не должен найти
+    with patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)):
+        res_diff_name = await find_similar_document("Other", "different_name.pdf", "Похожее описание")
+        assert res_diff_name is None
+
     dummy_emb = [0.1 if i % 2 == 0 else -0.1 for i in range(768)]
     with patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=dummy_emb)):
-        res_diff = await find_similar_document("Other", "passport.pdf", "Совсем другой документ")
+        res_diff = await find_similar_document("Other", "pass.pdf", "Совсем другой документ")
         assert res_diff is None
 
 
@@ -391,14 +397,14 @@ async def test_find_similar_document_by_distance(db_session: AsyncSession, monke
 
     # 1. Расстояние < 0.10 (0.001 разница по каждому измерению -> расстояние ~0.0277) -> дубликат автоматически
     with patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)):
-        res_semantic = await find_similar_document("Other", "passport.pdf", "Похожее описание")
+        res_semantic = await find_similar_document("Other", "pass.pdf", "Похожее описание")
         assert res_semantic is not None
         assert res_semantic["saved_filename"] == "pass.pdf"
 
     # 2. Расстояние >= 0.20 (разнонаправленные вектора -> косинусное расстояние ~1.0) -> не дубликат (unique)
     diff_emb = [-0.1 if i % 2 == 0 else 0.1 for i in range(768)]
     with patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=diff_emb)):
-        res_semantic = await find_similar_document("Other", "passport.pdf", "Другое описание")
+        res_semantic = await find_similar_document("Other", "pass.pdf", "Другое описание")
         assert res_semantic is None
 
 
