@@ -62,3 +62,41 @@ def get_analysis_start_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_save"),
     )
     return builder.as_markup()
+
+
+def get_batch_start_keyboard() -> InlineKeyboardMarkup:
+    """Возвращает клавиатуру для запуска пакетной обработки."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🚀 Начать обработку", callback_data="batch_start"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="batch_stop"),
+    )
+    return builder.as_markup()
+
+
+def get_batch_confirmation_keyboard() -> InlineKeyboardMarkup:
+    """Возвращает клавиатуру для подтверждения сохранения при пакетной обработке."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Сохранить", callback_data="batch_save"),
+        InlineKeyboardButton(text="⏭️ Пропустить", callback_data="batch_skip"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🛑 Остановить", callback_data="batch_stop"),
+    )
+    return builder.as_markup()
+
+
+def get_batch_duplicate_keyboard() -> InlineKeyboardMarkup:
+    """Возвращает клавиатуру для пакетной обработки при обнаружении дубликата."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📝 Сохранить как новый", callback_data="batch_save"),
+        InlineKeyboardButton(text="🔄 Заменить", callback_data="batch_replace"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="⏭️ Пропустить", callback_data="batch_skip"),
+        InlineKeyboardButton(text="🛑 Остановить", callback_data="batch_stop"),
+    )
+    return builder.as_markup()
+

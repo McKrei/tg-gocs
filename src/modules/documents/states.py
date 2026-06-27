@@ -14,3 +14,11 @@ class InboxStates(StatesGroup):
 
     processing = State()
     confirming = State()
+
+
+class BatchStates(StatesGroup):
+    """Состояния пакетной загрузки однофайловых документов."""
+
+    collecting = State()  # Сбор файлов от пользователя
+    confirming = State()  # Подтверждение/редактирование текущего черновика
+

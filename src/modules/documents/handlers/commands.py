@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from src.core.db.engine import async_session
 from src.modules.documents.models import Document
 from src.modules.documents.repository import DocumentRepository
-from src.modules.documents.states import DocumentProcessingStates
+from src.modules.documents.states import BatchStates, DocumentProcessingStates
 
 router = Router()
 
@@ -15,7 +15,8 @@ router = Router()
 async def cmd_start(message: types.Message) -> None:
     await message.answer(
         "👋 Привет! Я бот для управления семейными документами.\n\n"
-        "📎 /add — добавить документ\n"
+        "📎 /add — добавить документ (с автосклеиванием)\n"
+        "📦 /batch — пакетная загрузка нескольких документов поштучно\n"
         "🔍 /search — найти документ\n"
         "📋 /list — последние 10 документов\n"
         "📊 /stats — статистика по категориям\n"
@@ -34,6 +35,19 @@ async def cmd_add(message: types.Message, state: FSMContext) -> None:
         "Можно прислать несколько фото — они будут склеены в один PDF.\n"
         "Для отмены — /cancel"
     )
+
+
+@router.message(Command("batch"))
+async def cmd_batch(message: types.Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(BatchStates.collecting)
+    await message.answer(
+        "📦 Пакетная загрузка документов.\n\n"
+        "Отправьте по очереди несколько файлов (каждый файл будет сохранен как отдельный документ).\n"
+        "Затем нажмите кнопку «🚀 Начать обработку».\n\n"
+        "Для отмены — /cancel"
+    )
+
 
 
 @router.message(Command("search"))
@@ -62,10 +76,12 @@ async def cmd_cancel(message: types.Message, state: FSMContext) -> None:
 async def cmd_help(message: types.Message) -> None:
     help_text = (
         "🤖 *Справка по командам бота:*\n\n"
-        "📎 *Добавление документа:*\n"
-        "Введите /add — бот перейдёт в режим ожидания файла.\n"
-        "Отправьте одно или несколько фото/PDF. Бот проанализирует документ, "
-        "предложит категорию, имя и описание. Можно уточнить текстом.\n\n"
+        "📎 *Добавление документа (со склейкой):*\n"
+        "Введите /add — бот перейдёт в режим ожидания файлов.\n"
+        "Отправьте одно или несколько фото/PDF. Они будут склеены в один PDF-документ.\n\n"
+        "📦 *Пакетная загрузка (поштучно):*\n"
+        "Введите /batch — бот перейдёт в режим сбора файлов.\n"
+        "Отправьте несколько файлов по очереди. Каждый файл будет сохранен как отдельный документ.\n\n"
         "🔍 *Поиск документа:*\n"
         "/search — бот попросит написать запрос.\n"
         "/search паспорт мужа — поиск сразу с запросом.\n\n"
@@ -79,6 +95,7 @@ async def cmd_help(message: types.Message) -> None:
         "/stats — статистика по категориям\n"
         "/cancel — отменить текущее действие"
     )
+
     await message.answer(help_text, parse_mode="Markdown")
 
 
