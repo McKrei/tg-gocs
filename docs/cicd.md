@@ -15,9 +15,15 @@
 
 ```
 push → main
-   └── job: deploy
+   └── job: lint_and_test (параллельно / последовательно)
+         ├── Checkout code
+         ├── Set up Python 3.13 & uv
+         ├── Run lint (ruff + mypy)
+         └── Run unit tests (pytest -m "not integration")
+   └── job: deploy (запускается только при успехе lint_and_test)
          ├── Checkout code
          ├── SSH → сервер: git pull + make up
+         ├── Health check контейнера (docker ps + sleep 10)
          ├── [success] → Telegram: 🚀 Деплой завершён!
          └── [failure] → Telegram: ❌ Ошибка деплоя!
 ```
