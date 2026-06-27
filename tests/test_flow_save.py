@@ -139,6 +139,7 @@ async def test_flow_save_end_to_end() -> None:
         patch("src.modules.documents.handlers.callbacks.get_embedding", AsyncMock(return_value=[0.1] * 768)),
         patch("src.modules.documents.handlers.callbacks.async_session") as mock_session_maker,
         patch("src.modules.documents.handlers.callbacks._cleanup_files") as mock_cleanup,
+        patch("src.modules.documents.handlers.callbacks.find_similar_document", AsyncMock(return_value=None)),
     ):
         mock_session = AsyncMock()
         mock_session_maker.return_value.__aenter__.return_value = mock_session
