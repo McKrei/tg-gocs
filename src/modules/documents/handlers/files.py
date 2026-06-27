@@ -37,13 +37,16 @@ def _h(text: Any) -> str:
 def format_draft_message(draft: dict[str, Any], file_count: int) -> str:
     """Форматирует сообщение с черновиком метаданных."""
     header = "📄 Получен файл." if file_count == 1 else f"📄 Получен пакет из {file_count} файлов."
+    summary = draft.get("summary", "Нет описания")
+    if len(summary) > 1000:
+        summary = summary[:997] + "..."
     return (
         f"<b>{header}</b>\n\n"
         f"Предлагаю следующие метаданные:\n"
         f"📁 Категория: {_h(draft.get('category', 'Не определено'))}\n"
         f"👤 Владелец: {_h(draft.get('owner', 'Не определено'))}\n"
         f"📝 Имя файла: <code>{_h(draft.get('suggested_filename', 'document.pdf'))}</code>\n"
-        f"ℹ️ Описание: {_h(draft.get('summary', 'Нет описания'))}\n\n"
+        f"ℹ️ Описание: {_h(summary)}\n\n"
         f"Можете уточнить любое поле текстом или сохранить как есть."
     )
 
@@ -57,19 +60,26 @@ def format_draft_message_with_warning(draft: dict[str, Any], file_count: int, si
         if similar_doc["reason"] == "exact_path"
         else f"найден похожий файл (похожесть {similarity}%)"
     )
+    similar_summary = similar_doc.get("summary", "Нет описания")
+    if len(similar_summary) > 1000:
+        similar_summary = similar_summary[:997] + "..."
+    draft_summary = draft.get("summary", "Нет описания")
+    if len(draft_summary) > 1000:
+        draft_summary = draft_summary[:997] + "..."
     return (
         f"<b>{header}</b>\n\n"
         f"⚠️ <b>Внимание: {_h(reason)}!</b>\n"
         f"📁 Категория: <code>{_h(similar_doc['category'])}</code>\n"
         f"📝 Имя файла: <code>{_h(similar_doc['saved_filename'])}</code>\n"
-        f"ℹ️ Описание: {_h(similar_doc['summary'])}\n\n"
+        f"ℹ️ Описание: {_h(similar_summary)}\n\n"
         f"--- Предлагаемые метаданные нового документа ---\n"
         f"📁 Категория: {_h(draft.get('category', 'Не определено'))}\n"
         f"👤 Владелец: {_h(draft.get('owner', 'Не определено'))}\n"
         f"📝 Имя файла: <code>{_h(draft.get('suggested_filename', 'document.pdf'))}</code>\n"
-        f"ℹ️ Описание: {_h(draft.get('summary', 'Нет описания'))}\n\n"
+        f"ℹ️ Описание: {_h(draft_summary)}\n\n"
         f"Вы можете заменить существующий документ, сохранить его как новый или отменить."
     )
+
 
 
 async def process_incoming_file(
