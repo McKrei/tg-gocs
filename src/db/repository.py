@@ -6,7 +6,7 @@ import uuid
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Document
+from src.db.models import Document, PendingUpload
 
 
 class DocumentRepository:
@@ -156,3 +156,49 @@ class DocumentRepository:
         stmt = select(Document.gdrive_link).where(Document.gdrive_link.isnot(None))
         result = await self.session.execute(stmt)
         return {str(row[0]) for row in result.all() if row[0]}
+
+    async def add_pending_upload(
+        self,
+        local_path: str,
+        target_path: str,
+        document_id: uuid.UUID | None = None,
+    ) -> PendingUpload:
+        """Создает задачу на отложенную выгрузку файла в Google Drive."""
+        pending = PendingUpload(
+            id=uuid.uuid4(),
+            local_path=local_path,
+            target_path=target_path,
+            document_id=document_id,
+            status="pending",
+            attempts=0,
+        )
+        self.session.add(pending)
+        return pending
+
+    async def get_pending_uploads(self, limit: int = 50) -> list[PendingUpload]:
+        """Возвращает список активных задач на выгрузку в статусе pending."""
+        stmt = select(PendingUpload).where(PendingUpload.status == "pending").limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def update_pending_upload(
+        self,
+        upload_id: uuid.UUID,
+        attempts: int,
+        last_error: str | None,
+        status: str,
+    ) -> None:
+        """Обновляет состояние задачи на отложенную выгрузку."""
+        pending = await self.session.get(PendingUpload, upload_id)
+        if pending:
+            pending.attempts = attempts
+            pending.last_error = last_error
+            pending.status = status
+
+    async def delete_pending_upload(self, upload_id: uuid.UUID) -> bool:
+        """Удаляет задачу на отложенную выгрузку."""
+        pending = await self.session.get(PendingUpload, upload_id)
+        if not pending:
+            return False
+        await self.session.delete(pending)
+        return True

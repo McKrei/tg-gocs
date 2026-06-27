@@ -38,3 +38,32 @@ class Document(Base):
         nullable=False,
         doc="Время добавления документа",
     )
+
+
+class PendingUpload(Base):
+    """Модель для хранения задач на отложенную синхронизацию файлов с Google Drive."""
+
+    __tablename__ = "pending_uploads"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4, doc="Уникальный идентификатор задачи"
+    )
+    local_path: Mapped[str] = mapped_column(String(512), nullable=False, doc="Путь к локальному файлу-источнику")
+    target_path: Mapped[str] = mapped_column(
+        String(512), nullable=False, doc="Относительный путь для сохранения в Drive"
+    )
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, doc="Ссылка на ID документа в таблице documents"
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
+        nullable=False,
+        doc="Время создания задачи",
+    )
+    attempts: Mapped[int] = mapped_column(default=0, nullable=False, doc="Количество предпринятых попыток загрузки")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True, doc="Текст последней ошибки")
+    status: Mapped[str] = mapped_column(
+        String(50), default="pending", nullable=False, doc="Статус задачи: pending, completed, failed"
+    )
+

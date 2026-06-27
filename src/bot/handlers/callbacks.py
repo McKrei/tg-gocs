@@ -61,7 +61,7 @@ async def _persist_document(
     """Сохраняет документ и эмбеддинг в БД."""
     async with async_session() as session:
         repo = DocumentRepository(session)
-        await repo.add_document(
+        doc = await repo.add_document(
             saved_filename=suggested_filename,
             local_path=save_result["local_path"] or f"{draft['category']}/{suggested_filename}",
             category=draft["category"],
@@ -70,6 +70,15 @@ async def _persist_document(
             embedding=embedding,
             gdrive_link=save_result["gdrive_link"],
         )
+
+        # Если при сохранении произошла ошибка Drive — создаем PendingUpload для отложенной синхронизации
+        if save_result.get("gdrive_error"):
+            await repo.add_pending_upload(
+                local_path=save_result["local_path"] or f"{draft['category']}/{suggested_filename}",
+                target_path=f"{draft['category']}/{suggested_filename}",
+                document_id=doc.id,
+            )
+
         await session.commit()
 
 

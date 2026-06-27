@@ -94,6 +94,7 @@ async def test_drive_unavailable_fallback() -> None:
         with patch("src.bot.handlers.callbacks.DocumentRepository") as mock_repo_class:
             mock_repo = MagicMock()
             mock_repo.add_document = AsyncMock()
+            mock_repo.add_pending_upload = AsyncMock()
             mock_repo_class.return_value = mock_repo
 
             await handle_confirm_save(callback, bot, state)

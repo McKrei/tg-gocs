@@ -140,9 +140,12 @@ src/
 | Компонент | Механизм |
 |---|---|
 | LLM-вызовы | `@with_retry(attempts=3, backoff×2)`, timeout=30s |
-| Google Drive upload | `@with_retry(attempts=3)`, graceful degradation (только локально) |
+| Google Drive upload | `@with_retry(attempts=3)`, graceful degradation: сбой → локальная копия + запись в `pending_uploads` |
+| Ретраи выгрузки | Фоновая задача проверяет `pending_uploads` каждые 15 минут, повторно загружает файлы (до 5 попыток) |
+| Кэширование Drive | `FolderCache` хранит ID созданных папок 24 часа для минимизации сетевых API-запросов |
 | Проверка размера файла | `file_size > MAX_FILE_SIZE_MB * 1024²` до скачивания |
 | Rate limiting | In-memory: ≤ `RATE_LIMIT_PER_MINUTE` файлов/60с на user_id |
+| Сжатие фото | Асинхронное сжатие Pillow до 1600x1200, quality=80% сразу после скачивания |
 | FSM cleanup | `try/finally` в confirm_save → `state.clear()` всегда |
 | Temp-файлы | `try/finally` → cleanup даже при ошибке |
 | Session TTL | `SESSION_TTL_SECONDS` (по умолчанию 1800с) — сброс зависшей сессии |
@@ -165,8 +168,21 @@ src/
 | `embedding` | LargeBinary | BLOB float32 (768-мерный вектор) |
 | `created_at` | DateTime | Дата добавления в UTC |
 
+**Таблица `pending_uploads`** (SQLAlchemy + aiosqlite):
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | UUID | Первичный ключ задачи |
+| `local_path` | String(512) | Путь к локальной копии файла |
+| `target_path` | String(512) | Целевой относительный путь сохранения в Drive |
+| `document_id` | UUID? | Ссылка на документ в `documents` (может быть Null) |
+| `created_at` | DateTime | Дата создания задачи |
+| `attempts` | Integer | Количество попыток выгрузки |
+| `last_error` | Text? | Текст последней ошибки |
+| `status` | String(50) | Статус (`pending`, `completed`, `failed`) |
+
 **Виртуальная таблица `vec_documents`** (sqlite-vec):
-- KNN-поиск по L2-расстоянию через `vss_search`
+- KNN-поиск по косинусному расстоянию (`distance_metric=cosine`)
 - Создаётся автоматически при инициализации `engine.py`
 
 ---

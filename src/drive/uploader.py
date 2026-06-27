@@ -9,6 +9,7 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 from src.config import settings
+from src.drive.cache import folder_cache
 from src.drive.client import get_drive_service, is_drive_configured
 from src.utils.logger import get_logger
 
@@ -89,10 +90,22 @@ def _upload_file_sync(local_filepath: str, target_path: str) -> dict[str, str]:
 
     parent_id = settings.storage.gdrive_root_folder_id
 
-    # Создаем/проверяем промежуточные папки (все части пути, кроме имени файла на конце)
+    # Проверяем промежуточные папки
     folder_parts = target_parts[:-1]
-    for folder_name in folder_parts:
-        parent_id = _find_or_create_folder_sync(service, folder_name, parent_id)
+    full_folder_path = "/".join(folder_parts)
+    cached_id = folder_cache.get(full_folder_path)
+
+    if cached_id:
+        parent_id = cached_id
+    else:
+        for i, folder_name in enumerate(folder_parts):
+            current_path = "/".join(folder_parts[:i+1])
+            cached_part_id = folder_cache.get(current_path)
+            if cached_part_id:
+                parent_id = cached_part_id
+            else:
+                parent_id = _find_or_create_folder_sync(service, folder_name, parent_id)
+                folder_cache.set(current_path, parent_id)
 
     # Имя файла для сохранения
     file_name = target_parts[-1]
@@ -137,11 +150,21 @@ async def _upload_file_with_retry(local_filepath: str, target_path: str) -> dict
 
 def find_folder_by_path_sync(category: str) -> str | None:
     """Ищет идентификатор папки в Google Drive по её относительному пути."""
+    cached_id = folder_cache.get(category)
+    if cached_id:
+        return cached_id
+
     service = get_drive_service()
     parent_id = settings.storage.gdrive_root_folder_id
     parts = [p for p in Path(category).parts if p and p != "."]
 
-    for folder_name in parts:
+    for i, folder_name in enumerate(parts):
+        current_path = "/".join(parts[:i+1])
+        cached_part_id = folder_cache.get(current_path)
+        if cached_part_id:
+            parent_id = cached_part_id
+            continue
+
         query = (
             f"name = '{folder_name}' "
             f"and '{parent_id}' in parents "
@@ -158,6 +181,7 @@ def find_folder_by_path_sync(category: str) -> str | None:
             if not files:
                 return None
             parent_id = str(files[0]["id"])
+            folder_cache.set(current_path, parent_id)
         except Exception:
             return None
 

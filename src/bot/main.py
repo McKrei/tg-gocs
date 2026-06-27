@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -10,6 +11,9 @@ from src.db.engine import init_db
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+background_tasks: set[asyncio.Task[Any]] = set()
 
 
 async def main() -> None:
@@ -28,6 +32,13 @@ async def main() -> None:
     dp.include_router(files.router)
 
     await init_db()
+    
+    # Запускаем фоновую задачу ретраев отложенных выгрузок в Drive
+    from src.services.retry_uploads import start_retry_uploads_loop
+    task = asyncio.create_task(start_retry_uploads_loop())
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
+
     logger.info("Запуск Telegram-бота...")
     await dp.start_polling(bot)
 

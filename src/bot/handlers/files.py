@@ -104,6 +104,17 @@ async def process_incoming_file(
     await bot.download(file_id, destination=temp_path)
     logger.info(f"Сохранен временный файл: {temp_path.name} ({file_size} B)")
 
+    # Сжимаем изображения для уменьшения расхода трафика и ускорения обработки в LLM
+    if file_ext.lower() in (".jpg", ".jpeg", ".png", ".webp"):
+        from src.utils.image import compress_image
+        compressed_temp_path = temp_path.with_suffix(".jpg")
+        ok = await compress_image(temp_path, compressed_temp_path)
+        if ok:
+            if temp_path != compressed_temp_path:
+                temp_path.unlink(missing_ok=True)
+            temp_path = compressed_temp_path
+            file_ext = ".jpg"
+
     data = await state.get_data()
     last_activity = data.get("last_activity")
     current_time = time.time()

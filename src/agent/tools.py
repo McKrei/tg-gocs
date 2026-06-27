@@ -294,6 +294,14 @@ async def save_to_local_and_drive(temp_filepath: str, target_path: str) -> dict[
 
     upload_result = await upload_file_with_status(source_for_upload, target_path)
 
+    # Если выгрузка завершилась с ошибкой, а локальной копии еще нет — создаем принудительно
+    if upload_result.get("error") and not local_path:
+        default_dir = Path("data/documents")
+        dest_path = default_dir / target_path
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(temp_path, dest_path)
+        local_path = str(dest_path)
+
     return {
         "local_path": local_path or target_path,
         "gdrive_link": upload_result["link"],
