@@ -116,10 +116,7 @@ async def _do_search(query: str, message: types.Message) -> None:
         search_results = await vector_search(query, limit=settings.llm.search_limit)
 
         # Отсекаем по порогу расстояния
-        filtered_results = [
-            doc for doc in search_results
-            if doc.get("distance", 1.0) <= settings.llm.search_threshold
-        ]
+        filtered_results = [doc for doc in search_results if doc.get("distance", 1.0) <= settings.llm.search_threshold]
 
         rerank_result = await _rerank_documents(query, filtered_results)
 
@@ -142,15 +139,14 @@ async def _do_search(query: str, message: types.Message) -> None:
 
         # Формируем список названий документов
         names_list = "\n".join(
-            f"  {idx}. {html.escape(doc['saved_filename'])}"
-            for idx, doc in enumerate(matched_docs, 1)
+            f"  {idx}. {html.escape(doc['saved_filename'])}" for idx, doc in enumerate(matched_docs, 1)
         )
         escaped_query = html.escape(query)
         escaped_explanation = html.escape(explanation)
 
         # Первое сообщение: AI-текст + список названий
         await message.answer(
-            f"🔍 <b>Запрос:</b> \"{escaped_query}\"\n\n"
+            f'🔍 <b>Запрос:</b> "{escaped_query}"\n\n'
             f"📋 <b>Найденные документы:</b>\n{names_list}\n\n"
             f"{escaped_explanation}",
             parse_mode="HTML",
@@ -167,7 +163,7 @@ async def _do_search(query: str, message: types.Message) -> None:
                 gdrive_link = doc["gdrive_link"]
                 caption = f"📄 <code>{html.escape(doc['saved_filename'])}</code>"
                 if gdrive_link:
-                    caption += f"\n☁️ <a href=\"{gdrive_link}\">Google Drive</a>"
+                    caption += f'\n☁️ <a href="{gdrive_link}">Google Drive</a>'
                 file_input = types.FSInputFile(str(doc["local_path"]), filename=doc["saved_filename"])
                 await message.answer_document(file_input, caption=caption, parse_mode="HTML")
             else:
@@ -184,13 +180,10 @@ async def _do_search(query: str, message: types.Message) -> None:
                     if idx == 0:
                         # Подпись только у первого элемента группы
                         first_gdrive = gdrive_link
-                        cap_lines = "\n".join(
-                            f"📄 {html.escape(d['saved_filename'])}"
-                            for d in existing_docs
-                        )
+                        cap_lines = "\n".join(f"📄 {html.escape(d['saved_filename'])}" for d in existing_docs)
                         cap = cap_lines
                         if first_gdrive:
-                            cap += f"\n\n☁️ <a href=\"{first_gdrive}\">Google Drive</a>"
+                            cap += f'\n\n☁️ <a href="{first_gdrive}">Google Drive</a>'
                         media_items.append(
                             types.InputMediaDocument(
                                 media=types.FSInputFile(
@@ -217,7 +210,7 @@ async def _do_search(query: str, message: types.Message) -> None:
             gdrive_link = doc["gdrive_link"]
             text = f"⚠️ Файл <code>{html.escape(doc['saved_filename'])}</code> не найден локально."
             if gdrive_link:
-                text += f"\n☁️ <a href=\"{gdrive_link}\">Открыть в Google Drive</a>"
+                text += f'\n☁️ <a href="{gdrive_link}">Открыть в Google Drive</a>'
             await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
 
     except Exception as e:

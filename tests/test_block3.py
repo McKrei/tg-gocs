@@ -1,4 +1,3 @@
-
 from src.core.agent.registry import ToolRegistry, register_tool, registry
 
 
@@ -59,7 +58,5 @@ def test_decorator_registration() -> None:
 
     registry.get_tools_schema("classify")[0]
     # Наш декоратор может зарегистрировать несколько инструментов, поэтому найдем нужный в схеме
-    target_schema = next(
-        s for s in registry.get_tools_schema("classify") if s["function"]["name"] == "custom_name"
-    )
+    target_schema = next(s for s in registry.get_tools_schema("classify") if s["function"]["name"] == "custom_name")
     assert target_schema["function"]["description"] == "Кастомный инструмент."

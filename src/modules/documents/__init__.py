@@ -29,7 +29,6 @@ def register_module() -> tuple[Router, list[Callable[..., Coroutine[Any, Any, An
     module_router.include_router(search.router)
     module_router.include_router(files.router)
 
-
     # 3. Список фоновых задач
     background_tasks = [start_retry_uploads_loop]
 

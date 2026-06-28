@@ -21,4 +21,3 @@ class BatchStates(StatesGroup):
 
     collecting = State()  # Сбор файлов от пользователя
     confirming = State()  # Подтверждение/редактирование текущего черновика
-

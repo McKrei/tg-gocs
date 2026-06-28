@@ -145,6 +145,7 @@ async def sync_drive_to_db() -> SyncResult:
     logger.info(f"Уже проиндексировано: {len(indexed_links)} файлов")
 
     from src.modules.documents.tools import get_existing_structure
+
     structure_info = await get_existing_structure()
 
     for file_info in drive_files:

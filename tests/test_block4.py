@@ -69,7 +69,7 @@ async def test_retry_pending_uploads(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Создаем фиктивную сессию и репозиторий через моки
     mock_session = AsyncMock(spec=AsyncSession)
-    
+
     mock_pending = AsyncMock()
     mock_pending.id = uuid.uuid4()
     mock_pending.local_path = "tests/fixtures/passport.jpg"  # Файл существует
@@ -87,7 +87,7 @@ async def test_retry_pending_uploads(monkeypatch: pytest.MonkeyPatch) -> None:
         "src.modules.documents.services.retry_uploads.async_session",
         MagicMock(return_value=mock_session),
     )
-    
+
     with (
         patch("src.modules.documents.services.retry_uploads.DocumentRepository", return_value=mock_repo),
         patch(

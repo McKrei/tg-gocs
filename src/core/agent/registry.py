@@ -54,19 +54,13 @@ class ToolRegistry:
     def get_tools_map(self, mode: str = "full") -> dict[str, Callable[..., Any]]:
         """Возвращает словарь зарегистрированных функций-инструментов для указанного режима."""
         if mode == "classify":
-            return {
-                name: func for name, func in self._tools.items() if self._modes[name] == "classify"
-            }
+            return {name: func for name, func in self._tools.items() if self._modes[name] == "classify"}
         return self._tools
 
     def get_tools_schema(self, mode: str = "full") -> list[dict[str, Any]]:
         """Возвращает JSON-схемы инструментов для указанного режима."""
         if mode == "classify":
-            return [
-                schema
-                for name, schema in self._schemas.items()
-                if self._modes[name] == "classify"
-            ]
+            return [schema for name, schema in self._schemas.items() if self._modes[name] == "classify"]
         return list(self._schemas.values())
 
     def discover_tools(self) -> None:

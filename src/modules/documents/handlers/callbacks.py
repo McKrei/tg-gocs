@@ -39,9 +39,9 @@ def _format_gdrive_result(save_result: dict[str, Any], target_path: str) -> str:
     escaped_path = html.escape(target_path)
     if save_result["gdrive_link"]:
         folder_link = save_result.get("gdrive_folder_link")
-        folder_md = f" | <a href=\"{html.escape(folder_link)}\">открыть папку</a>" if folder_link else ""
+        folder_md = f' | <a href="{html.escape(folder_link)}">открыть папку</a>' if folder_link else ""
         file_link = html.escape(save_result["gdrive_link"])
-        return f"☁️ Google Drive: <code>{escaped_path}</code>\n<a href=\"{file_link}\">открыть файл</a>{folder_md}"
+        return f'☁️ Google Drive: <code>{escaped_path}</code>\n<a href="{file_link}">открыть файл</a>{folder_md}'
     if save_result.get("gdrive_error"):
         return f"☁️ Google Drive: ошибка загрузки — {html.escape(str(save_result['gdrive_error']))}"
     return "☁️ Google Drive: не настроен"
@@ -136,10 +136,7 @@ async def handle_start_analysis(callback: types.CallbackQuery, bot: Bot, state: 
 
     try:
         # Параллельно готовим/склеиваем файлы и собираем структуру папок
-        merged_path, structure_info = await asyncio.gather(
-            _prepare_files(),
-            get_existing_structure()
-        )
+        merged_path, structure_info = await asyncio.gather(_prepare_files(), get_existing_structure())
     except Exception as e:
         logger.error(f"Ошибка при обработке файлов: {e}")
         if isinstance(callback.message, types.Message):
@@ -166,6 +163,7 @@ async def handle_start_analysis(callback: types.CallbackQuery, bot: Bot, state: 
         await callback.message.edit_text("📂 Определяю категорию и проверяю дубликаты...", reply_markup=None)
 
     from src.modules.documents.tools import get_flat_directory_list
+
     flat_dirs = get_flat_directory_list()
     categories = []
     try:
@@ -227,8 +225,7 @@ async def handle_confirm_save(callback: types.CallbackQuery, bot: Bot, state: FS
         final_temp_path = await _prepare_file_for_save(files, suggested_filename)
         # Запускаем сохранение в Drive и получение эмбеддинга параллельно
         save_result, embedding = await asyncio.gather(
-            save_to_local_and_drive(final_temp_path, target_path),
-            get_embedding(draft["summary"])
+            save_to_local_and_drive(final_temp_path, target_path), get_embedding(draft["summary"])
         )
         await _persist_document(draft, save_result, suggested_filename, embedding)
 
@@ -274,8 +271,7 @@ async def handle_replace_save(callback: types.CallbackQuery, bot: Bot, state: FS
         final_temp_path = await _prepare_file_for_save(files, suggested_filename)
         # Запускаем сохранение в Drive и получение эмбеддинга параллельно
         save_result, embedding = await asyncio.gather(
-            save_to_local_and_drive(final_temp_path, target_path),
-            get_embedding(draft["summary"])
+            save_to_local_and_drive(final_temp_path, target_path), get_embedding(draft["summary"])
         )
         await _persist_document(draft, save_result, suggested_filename, embedding)
 

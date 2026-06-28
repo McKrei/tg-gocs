@@ -251,7 +251,7 @@ async def test_classify_document_orchestrator(tmp_path: Path, monkeypatch: pytes
 def test_parse_json_content_with_truncated_json() -> None:
     """Проверяет, что parse_json_content корректно восстанавливает и парсит усеченный JSON."""
     truncated = (
-        '{\n'
+        "{\n"
         '  "category": "Личные документы/Общие",\n'
         '  "suggested_filename": "2026-06-23 Чек с покупки в магазине.jpg",\n'
         '  "summary": "Чек с покупки в магазине. Номер чека: 00000000000'
@@ -372,8 +372,10 @@ async def test_find_similar_document(db_session: AsyncSession, monkeypatch: pyte
     assert res_exact["similarity_percent"] == 100
 
     # С тем же именем файла (или нормализованным) -> должен найти семантический дубликат
-    with patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)), \
-         patch("src.modules.documents.services.duplicate_verifier.check_is_duplicate", AsyncMock(return_value=True)):
+    with (
+        patch("src.modules.documents.tools.get_embedding", AsyncMock(return_value=[0.101] * 768)),
+        patch("src.modules.documents.services.duplicate_verifier.check_is_duplicate", AsyncMock(return_value=True)),
+    ):
         res_semantic = await find_similar_document("Other", "pass.jpg", "Похожее описание")
         assert res_semantic is not None
         assert res_semantic["reason"] == "semantic"
@@ -439,7 +441,7 @@ async def test_check_is_duplicate() -> None:
 
         res = await check_is_duplicate(
             {"category": "Personal", "suggested_filename": "pass.pdf", "summary": "Паспорт"},
-            {"category": "Personal", "saved_filename": "pass.pdf", "summary": "Паспорт"}
+            {"category": "Personal", "saved_filename": "pass.pdf", "summary": "Паспорт"},
         )
         assert res is True
 
@@ -454,6 +456,6 @@ async def test_check_is_duplicate() -> None:
 
         res = await check_is_duplicate(
             {"category": "Personal", "suggested_filename": "pass.pdf", "summary": "Паспорт Ивана"},
-            {"category": "Personal", "saved_filename": "pass.pdf", "summary": "Паспорт Марии"}
+            {"category": "Personal", "saved_filename": "pass.pdf", "summary": "Паспорт Марии"},
         )
         assert res is False

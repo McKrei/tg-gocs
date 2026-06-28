@@ -341,4 +341,3 @@ async def vector_search(query: str, limit: int = 5) -> list[dict[str, Any]]:
                 }
             )
         return output
-

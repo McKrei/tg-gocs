@@ -49,7 +49,6 @@ async def cmd_batch(message: types.Message, state: FSMContext) -> None:
     )
 
 
-
 @router.message(Command("search"))
 async def cmd_search(message: types.Message, state: FSMContext) -> None:
     from src.modules.documents.handlers.search import _do_search

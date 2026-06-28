@@ -5,11 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
 
 from src.bot.middleware.auth import AuthMiddleware
 from src.core.config import settings
 from src.core.db.engine import init_db
+from src.core.db.fsm_storage import SQLiteStorage
 from src.core.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -48,7 +48,7 @@ def discover_and_register_modules(dp: Dispatcher) -> list[Callable[..., Coroutin
 async def main() -> None:
     """Точка входа для запуска Telegram-бота."""
     bot = Bot(token=settings.bot.token)
-    dp = Dispatcher(storage=MemoryStorage())
+    dp = Dispatcher(storage=SQLiteStorage())
 
     # Настройка middleware авторизации
     dp.message.outer_middleware(AuthMiddleware())

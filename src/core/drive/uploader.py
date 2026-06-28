@@ -99,7 +99,7 @@ def _upload_file_sync(local_filepath: str, target_path: str) -> dict[str, str]:
         parent_id = cached_id
     else:
         for i, folder_name in enumerate(folder_parts):
-            current_path = "/".join(folder_parts[:i+1])
+            current_path = "/".join(folder_parts[: i + 1])
             cached_part_id = folder_cache.get(current_path)
             if cached_part_id:
                 parent_id = cached_part_id
@@ -159,7 +159,7 @@ def find_folder_by_path_sync(category: str) -> str | None:
     parts = [p for p in Path(category).parts if p and p != "."]
 
     for i, folder_name in enumerate(parts):
-        current_path = "/".join(parts[:i+1])
+        current_path = "/".join(parts[: i + 1])
         cached_part_id = folder_cache.get(current_path)
         if cached_part_id:
             parent_id = cached_part_id

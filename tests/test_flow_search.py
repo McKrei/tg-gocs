@@ -28,11 +28,7 @@ async def test_rerank_documents_with_docs() -> None:
 
     mock_response = MagicMock()
     mock_response.choices = [
-        MagicMock(
-            message=MagicMock(
-                content='{"matching_doc_ids": ["11111111-1111-1111-1111-111111111111"]}'
-            )
-        )
+        MagicMock(message=MagicMock(content='{"matching_doc_ids": ["11111111-1111-1111-1111-111111111111"]}'))
     ]
 
     mock_client = MagicMock()
@@ -49,9 +45,7 @@ async def test_generate_search_explanation() -> None:
     from src.modules.documents.handlers.search import _generate_search_explanation
 
     mock_response = MagicMock()
-    mock_response.choices = [
-        MagicMock(message=MagicMock(content="Найдено 1 документ. Это полис."))
-    ]
+    mock_response.choices = [MagicMock(message=MagicMock(content="Найдено 1 документ. Это полис."))]
     mock_client = MagicMock()
     mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
     with patch("src.modules.documents.handlers.search.get_llm_client", return_value=mock_client):

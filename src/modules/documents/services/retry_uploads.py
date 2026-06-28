@@ -24,9 +24,7 @@ async def retry_pending_uploads_once() -> None:
         for item in pending_list:
             local_file = Path(item.local_path)
             if not local_file.exists():
-                logger.error(
-                    f"Локальный файл {item.local_path} для задачи {item.id} не найден. Отмена задачи."
-                )
+                logger.error(f"Локальный файл {item.local_path} для задачи {item.id} не найден. Отмена задачи.")
                 await repo.update_pending_upload(
                     upload_id=item.id,
                     attempts=item.attempts + 1,
@@ -36,9 +34,7 @@ async def retry_pending_uploads_once() -> None:
                 continue
 
             attempts = item.attempts + 1
-            logger.info(
-                f"Попытка выгрузки {attempts} для {item.target_path} (локальный файл: {item.local_path})"
-            )
+            logger.info(f"Попытка выгрузки {attempts} для {item.target_path} (локальный файл: {item.local_path})")
 
             try:
                 res = await upload_file_with_status(str(local_file), item.target_path)
@@ -48,7 +44,7 @@ async def retry_pending_uploads_once() -> None:
                         doc = await repo.get_document(item.document_id)
                         if doc:
                             doc.gdrive_link = res["link"]
-                    
+
                     await repo.update_pending_upload(
                         upload_id=item.id,
                         attempts=attempts,
@@ -65,9 +61,7 @@ async def retry_pending_uploads_once() -> None:
                         last_error=err_msg,
                         status=status,
                     )
-                    logger.warning(
-                        f"Не удалось выгрузить отложенный файл {item.target_path}. Причина: {err_msg}."
-                    )
+                    logger.warning(f"Не удалось выгрузить отложенный файл {item.target_path}. Причина: {err_msg}.")
             except Exception as e:
                 err_msg = f"{e}\n{traceback.format_exc()}"
                 status = "pending" if attempts < 5 else "failed"

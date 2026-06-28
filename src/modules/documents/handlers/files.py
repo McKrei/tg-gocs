@@ -1,3 +1,4 @@
+import asyncio
 import html
 import time
 from pathlib import Path
@@ -16,6 +17,13 @@ router = Router()
 logger = get_logger(__name__)
 
 rate_limits: dict[int, list[float]] = {}
+user_locks: dict[int, asyncio.Lock] = {}
+
+
+def get_user_lock(user_id: int) -> asyncio.Lock:
+    if user_id not in user_locks:
+        user_locks[user_id] = asyncio.Lock()
+    return user_locks[user_id]
 
 
 def _cleanup_files(files: list[str]) -> None:
@@ -81,7 +89,6 @@ def format_draft_message_with_warning(draft: dict[str, Any], file_count: int, si
     )
 
 
-
 async def process_incoming_file(
     message: types.Message,
     bot: Bot,
@@ -117,6 +124,7 @@ async def process_incoming_file(
     # Сжимаем изображения для уменьшения расхода трафика и ускорения обработки в LLM
     if file_ext.lower() in (".jpg", ".jpeg", ".png", ".webp"):
         from src.core.utils.image import compress_image
+
         compressed_temp_path = temp_path.with_suffix(".jpg")
         ok = await compress_image(temp_path, compressed_temp_path)
         if ok:
@@ -125,59 +133,58 @@ async def process_incoming_file(
             temp_path = compressed_temp_path
             file_ext = ".jpg"
 
-    data = await state.get_data()
-    last_activity = data.get("last_activity")
-    current_time = time.time()
+    async with get_user_lock(user_id):
+        data = await state.get_data()
+        last_activity = data.get("last_activity")
+        current_time = time.time()
 
-    if last_activity and (current_time - last_activity > settings.storage.session_ttl_seconds):
-        logger.info("Сессия устарела по таймауту. Очистка старых файлов.")
-        _cleanup_files(data.get("files", []))
-        await state.clear()
-        await state.set_state(DocumentProcessingStates.waiting_file)
-        data = {}
+        if last_activity and (current_time - last_activity > settings.storage.session_ttl_seconds):
+            logger.info("Сессия устарела по таймауту. Очистка старых файлов.")
+            _cleanup_files(data.get("files", []))
+            await state.clear()
+            await state.set_state(DocumentProcessingStates.waiting_file)
+            data = {}
 
-    files = data.get("files", [])
-    files.append(str(temp_path))
+        files = data.get("files", [])
+        files.append(str(temp_path))
 
-    await state.update_data(
-        files=files,
-        last_activity=current_time,
-    )
+        await state.update_data(
+            files=files,
+            last_activity=current_time,
+        )
 
-    msg_id = data.get("msg_id")
-    reply_markup = get_analysis_start_keyboard()
+        msg_id = data.get("msg_id")
+        reply_markup = get_analysis_start_keyboard()
 
-    n = len(files)
-    if n % 10 == 1 and n % 100 != 11:
-        file_word = "файл"
-    elif n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
-        file_word = "файла"
-    else:
-        file_word = "файлов"
+        n = len(files)
+        if n % 10 == 1 and n % 100 != 11:
+            file_word = "файл"
+        elif n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+            file_word = "файла"
+        else:
+            file_word = "файлов"
 
-    text = (
-        f"📥 Получено {n} {file_word}.\n\n"
-        f"Вы можете отправить ещё файлы (фотографии и PDF будут склеены в один PDF-документ).\n\n"
-        f"Нажмите кнопку ниже, чтобы начать анализ."
-    )
+        text = (
+            f"📥 Получено {n} {file_word}.\n\n"
+            f"Вы можете отправить ещё файлы (фотографии и PDF будут склеены в один PDF-документ).\n\n"
+            f"Нажмите кнопку ниже, чтобы начать анализ."
+        )
 
-    if not msg_id:
-        status_msg = await message.answer(text, reply_markup=reply_markup)
-        await state.update_data(msg_id=status_msg.message_id)
-    else:
-        try:
-            await bot.edit_message_text(
-                chat_id=message.chat.id,
-                message_id=msg_id,
-                text=text,
-                reply_markup=reply_markup,
-            )
-        except Exception as e:
-            logger.warning(f"Не удалось обновить сообщение о получении файлов: {e}")
+        if not msg_id:
             status_msg = await message.answer(text, reply_markup=reply_markup)
             await state.update_data(msg_id=status_msg.message_id)
-
-
+        else:
+            try:
+                await bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=msg_id,
+                    text=text,
+                    reply_markup=reply_markup,
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось обновить сообщение о получении файлов: {e}")
+                status_msg = await message.answer(text, reply_markup=reply_markup)
+                await state.update_data(msg_id=status_msg.message_id)
 
 
 @router.message(

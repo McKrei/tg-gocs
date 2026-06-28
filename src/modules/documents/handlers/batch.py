@@ -38,6 +38,15 @@ logger = get_logger(__name__)
 # Словарь для хранения фоновых задач префетча: user_id -> (file_path, task)
 prefetch_tasks: dict[int, tuple[str, asyncio.Task[tuple[dict[str, Any], dict[str, Any] | None]]]] = {}
 
+# Локи для пользователей для предотвращения race condition при пакетной отправке
+user_locks: dict[int, asyncio.Lock] = {}
+
+
+def get_user_lock(user_id: int) -> asyncio.Lock:
+    if user_id not in user_locks:
+        user_locks[user_id] = asyncio.Lock()
+    return user_locks[user_id]
+
 
 def _h(text: Any) -> str:
     """Экранирует спецсимволы HTML."""
@@ -179,9 +188,7 @@ async def _show_next_batch_file(message: types.Message, state: FSMContext) -> No
     if len(queue) > 1:
         next_file_path = queue[1]
         logger.info(f"Запуск фонового prefetch для следующего файла: {next_file_path}")
-        task = asyncio.create_task(
-            _analyze_file(next_file_path, Path(next_file_path).suffix, existing_paths)
-        )
+        task = asyncio.create_task(_analyze_file(next_file_path, Path(next_file_path).suffix, existing_paths))
         prefetch_tasks[user_id] = (next_file_path, task)
 
     duplicate_id = str(similar_doc["id"]) if similar_doc else None
@@ -233,6 +240,7 @@ async def process_batch_incoming_file(
 
     if file_ext.lower() in (".jpg", ".jpeg", ".png", ".webp"):
         from src.core.utils.image import compress_image
+
         compressed_temp_path = temp_path.with_suffix(".jpg")
         ok = await compress_image(temp_path, compressed_temp_path)
         if ok:
@@ -241,54 +249,55 @@ async def process_batch_incoming_file(
             temp_path = compressed_temp_path
             file_ext = ".jpg"
 
-    data = await state.get_data()
-    files = data.get("batch_queue", [])
+    async with get_user_lock(user_id):
+        data = await state.get_data()
+        files = data.get("batch_queue", [])
 
-    # Ограничение на 20 файлов в пакете
-    if len(files) >= 20:
-        await message.answer("Достигнут лимит пакета (максимум 20 файлов).")
-        temp_path.unlink(missing_ok=True)
-        return
+        # Ограничение на 20 файлов в пакете
+        if len(files) >= 20:
+            await message.answer("Достигнут лимит пакета (максимум 20 файлов).")
+            temp_path.unlink(missing_ok=True)
+            return
 
-    files.append(str(temp_path))
+        files.append(str(temp_path))
 
-    await state.update_data(
-        batch_queue=files,
-        last_activity=time.time(),
-    )
+        await state.update_data(
+            batch_queue=files,
+            last_activity=time.time(),
+        )
 
-    msg_id = data.get("msg_id")
-    reply_markup = get_batch_start_keyboard()
+        msg_id = data.get("msg_id")
+        reply_markup = get_batch_start_keyboard()
 
-    n = len(files)
-    if n % 10 == 1 and n % 100 != 11:
-        file_word = "файл"
-    elif n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
-        file_word = "файла"
-    else:
-        file_word = "файлов"
+        n = len(files)
+        if n % 10 == 1 and n % 100 != 11:
+            file_word = "файл"
+        elif n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+            file_word = "файла"
+        else:
+            file_word = "файлов"
 
-    text = (
-        f"📦 Пакетная загрузка: получено {n} {file_word}.\n\n"
-        f"Каждый файл будет обработан отдельно (без склейки в PDF).\n\n"
-        f"Отправьте ещё файлы или нажмите кнопку ниже, чтобы начать."
-    )
+        text = (
+            f"📦 Пакетная загрузка: получено {n} {file_word}.\n\n"
+            f"Каждый файл будет обработан отдельно (без склейки в PDF).\n\n"
+            f"Отправьте ещё файлы или нажмите кнопку ниже, чтобы начать."
+        )
 
-    if not msg_id:
-        status_msg = await message.answer(text, reply_markup=reply_markup)
-        await state.update_data(msg_id=status_msg.message_id)
-    else:
-        try:
-            await bot.edit_message_text(
-                chat_id=message.chat.id,
-                message_id=msg_id,
-                text=text,
-                reply_markup=reply_markup,
-            )
-        except Exception as e:
-            logger.warning(f"Не удалось обновить сообщение о получении batch файлов: {e}")
+        if not msg_id:
             status_msg = await message.answer(text, reply_markup=reply_markup)
             await state.update_data(msg_id=status_msg.message_id)
+        else:
+            try:
+                await bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=msg_id,
+                    text=text,
+                    reply_markup=reply_markup,
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось обновить сообщение о получении batch файлов: {e}")
+                status_msg = await message.answer(text, reply_markup=reply_markup)
+                await state.update_data(msg_id=status_msg.message_id)
 
 
 # Хэндлеры для приёма файлов в состоянии BatchStates.collecting
@@ -383,8 +392,7 @@ async def handle_batch_save(callback: types.CallbackQuery, state: FSMContext) ->
     try:
         # Запускаем сохранение в Drive и получение эмбеддинга параллельно
         save_result, embedding = await asyncio.gather(
-            save_to_local_and_drive(file_path, target_path),
-            get_embedding(draft["summary"])
+            save_to_local_and_drive(file_path, target_path), get_embedding(draft["summary"])
         )
         await _persist_batch_document(draft, save_result, suggested_filename, embedding)
 
@@ -433,8 +441,7 @@ async def handle_batch_replace(callback: types.CallbackQuery, state: FSMContext)
 
     try:
         save_result, embedding = await asyncio.gather(
-            save_to_local_and_drive(file_path, target_path),
-            get_embedding(draft["summary"])
+            save_to_local_and_drive(file_path, target_path), get_embedding(draft["summary"])
         )
         await _persist_batch_document(draft, save_result, suggested_filename, embedding)
 
@@ -514,10 +521,11 @@ async def handle_batch_text_refine(message: types.Message, state: FSMContext) ->
     status_msg = await message.answer("🔄 Обновляю черновик...")
 
     from src.modules.documents.services.refiner import refine_draft
+
     try:
         feedback = message.text or ""
         updated_draft = await refine_draft(draft, feedback)
-        
+
         # Пересчитываем дубликат с новыми параметрами
         similar_doc = await find_similar_document(
             updated_draft["category"], updated_draft["suggested_filename"], updated_draft["summary"]
@@ -530,7 +538,7 @@ async def handle_batch_text_refine(message: types.Message, state: FSMContext) ->
         )
 
         text, keyboard = _format_batch_draft_message(updated_draft, file_path, similar_doc, len(queue))
-        
+
         # Обновляем старое сообщение с черновиком
         if msg_id and message.bot:
             try:

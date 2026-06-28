@@ -62,4 +62,3 @@ class PendingUpload(Base):
     status: Mapped[str] = mapped_column(
         String(50), default="pending", nullable=False, doc="Статус задачи: pending, completed, failed"
     )
-

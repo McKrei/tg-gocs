@@ -25,6 +25,7 @@ def compress_image_sync(
             # Предотвращаем сбои из-за EXIF ориентации
             try:
                 from PIL import ImageOps
+
                 img = ImageOps.exif_transpose(img)
             except Exception:
                 pass
@@ -41,9 +42,7 @@ def compress_image_sync(
                     f"Изображение сжато с размера {original_width}x{original_height} до {new_width}x{new_height}"
                 )
             else:
-                logger.info(
-                    f"Изображение не требует изменения размеров: {original_width}x{original_height}"
-                )
+                logger.info(f"Изображение не требует изменения размеров: {original_width}x{original_height}")
 
             # Конвертируем в RGB если нужно
             if img.mode != "RGB":

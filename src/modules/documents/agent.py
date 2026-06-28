@@ -177,6 +177,7 @@ async def classify_document(
 
     if structure_info is None:
         from src.modules.documents.tools import get_existing_structure
+
         structure_info = await get_existing_structure()
 
     messages: list[dict[str, Any]] = [

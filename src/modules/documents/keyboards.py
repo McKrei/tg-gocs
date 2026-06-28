@@ -99,4 +99,3 @@ def get_batch_duplicate_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🛑 Остановить", callback_data="batch_stop"),
     )
     return builder.as_markup()
-
