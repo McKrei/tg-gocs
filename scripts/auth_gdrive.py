@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from google_auth_oauthlib.flow import InstalledAppFlow
-from src.config import settings
+from src.core.config import settings
 
 
 def main() -> None:
