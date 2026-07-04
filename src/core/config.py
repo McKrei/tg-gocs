@@ -35,17 +35,53 @@ class BotConfig(BaseSettings):
 
 
 class LLMConfig(BaseSettings):
-    """Настройки моделей OpenRouter (Gemini)."""
+    """Настройки моделей LLM и Embeddings."""
 
-    api_key: str = Field(..., alias="OPENROUTER_API_KEY")
-    model_name: str = Field("google/gemini-3.5-flash", alias="LLM_MODEL")
+    provider: str = Field("minimax", alias="LLM_PROVIDER")
+    
+    # Ключи API
+    openrouter_api_key: str = Field("", alias="OPENROUTER_API_KEY")
+    minimax_api_key: str = Field("", alias="MINIMAX_API_KEY")
+
+    # Базовые URL
+    openrouter_base_url: str = Field("https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
+    minimax_base_url: str = Field("https://api.minimax.io/v1", alias="MINIMAX_BASE_URL")
+
+    # Модели (если не заданы, подставляются по умолчанию для провайдера)
+    model_name: str = Field("", alias="LLM_MODEL")
     embedding_model_name: str = Field("google/gemini-embedding-2", alias="EMBEDDING_MODEL")
     embedding_dim: int = Field(768, alias="EMBEDDING_DIM")
-    base_url: str = Field("https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
+    
     search_limit: int = Field(10, alias="SEARCH_LIMIT")
     search_threshold: float = Field(0.80, alias="SEARCH_THRESHOLD")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @property
+    def api_key(self) -> str:
+        """Возвращает ключ API для текущего LLM провайдера."""
+        if self.provider == "minimax":
+            return self.minimax_api_key
+        return self.openrouter_api_key
+
+    @property
+    def base_url(self) -> str:
+        """Возвращает базовый URL для текущего LLM провайдера."""
+        if self.provider == "minimax":
+            return self.minimax_base_url
+        return self.openrouter_base_url
+
+    @field_validator("model_name", mode="after")
+    @classmethod
+    def set_default_model(cls, v: str, info: Any) -> str:
+        """Устанавливает модель по умолчанию, если она не задана явно."""
+        if v:
+            return v
+        # info.data содержит уже провалидированные поля до текущего
+        provider = info.data.get("provider", "minimax")
+        if provider == "minimax":
+            return "minimax-m3"
+        return "google/gemini-3.5-flash"
 
 
 class DBConfig(BaseSettings):

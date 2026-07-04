@@ -25,9 +25,9 @@ async def get_embedding(text: str) -> list[float]:
         cleaned_text = "Семейный документ"
 
     dim = settings.llm.embedding_dim
-    url = f"{settings.llm.base_url}/embeddings"
+    url = f"{settings.llm.openrouter_base_url}/embeddings"
     headers = {
-        "Authorization": f"Bearer {settings.llm.api_key}",
+        "Authorization": f"Bearer {settings.llm.openrouter_api_key}",
         "Content-Type": "application/json",
     }
     payload = {
