@@ -11,6 +11,7 @@ jobs:
     env:
       BOT_TOKEN: "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
       OPENROUTER_API_KEY: "sk-or-v1-mock-key-for-testing"
+      MINIMAX_API_KEY: "sk-cp-mock-key-for-testing"
       GDRIVE_ROOT_FOLDER_ID: "1a2b3c4d5e6f7g8h9i0j-mock-root-id"
     steps:
       - name: Checkout code
